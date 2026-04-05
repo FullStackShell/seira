@@ -8,22 +8,33 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var cmdReg = cobrautils.Registory{}
-
-func rootCmd() *cobra.Command {
-	cmd := cobra.Command{
-		Use:           "seira",
-		Short:         "A shell parser",
-		SilenceUsage:  true,
-		SilenceErrors: true,
-	}
-
-	cmdReg.Bind(&cmd)
-	return &cmd
-}
+var (
+	verbose bool
+	cmdReg  = cobrautils.Registory{}
+)
 
 func init() {
-	handler := clog.New(clog.WithColor(true), clog.WithLevel(slog.LevelDebug))
-	logger := slog.New(handler)
-	slog.SetDefault(logger)
+	cmdReg.Add(astCmd(), bundleCmd(), newCmd())
+}
+
+func rootCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:           "seira",
+		Short:         "Bundle shell scripts into standalone executables",
+		SilenceUsage:  true,
+		SilenceErrors: true,
+		PersistentPreRun: func(cmd *cobra.Command, args []string) {
+			level := slog.LevelWarn
+			if verbose {
+				level = slog.LevelDebug
+			}
+			handler := clog.New(clog.WithColor(true), clog.WithLevel(level))
+			slog.SetDefault(slog.New(handler))
+		},
+	}
+
+	cmd.PersistentFlags().BoolVarP(&verbose, "verbose", "v", false, "enable debug logging")
+	cmdReg.Bind(cmd)
+
+	return cmd
 }
