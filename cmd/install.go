@@ -17,11 +17,18 @@ func installCmd() *cobra.Command {
 	var save bool
 
 	cmd := &cobra.Command{
-		Use:   "install <user/package[@version]>",
+		Use:   "install [user/package[@version]]",
 		Short: "Install a bpkg-compatible package",
-		Long:  "Download and install a bpkg-compatible package from GitHub into the deps directory.",
-		Args:  cobra.ExactArgs(1),
+		Long: `Install a bpkg-compatible package from GitHub into the deps directory.
+
+If no package is specified, installs all dependencies from .seira-lock.json
+(or .seirarc.json if no lockfile exists).`,
+		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if len(args) == 0 {
+				return installFromLockOrConfig(depsDir)
+			}
+
 			ref, err := bpkg.ParsePackageRef(args[0])
 			if err != nil {
 				return err
@@ -66,65 +73,114 @@ func installCmd() *cobra.Command {
 	return cmd
 }
 
+// installFromLockOrConfig installs all dependencies from lockfile, falling back to config.
+func installFromLockOrConfig(depsDir string) error {
+	cfg, cfgErr := config.Load(".")
+	if cfgErr == nil && depsDir == "" {
+		depsDir = cfg.DepsDir
+	}
+
+	lf, err := lockfile.Load(".")
+	if err != nil {
+		return fmt.Errorf("loading lockfile: %w", err)
+	}
+
+	// If lockfile has entries, install from it
+	if len(lf.Dependencies) > 0 {
+		return installFromLock(lf, depsDir)
+	}
+
+	// Fall back to .seirarc.json dependencies
+	if cfgErr != nil {
+		return fmt.Errorf("no .seira-lock.json or .seirarc.json found")
+	}
+	if len(cfg.Dependencies) == 0 {
+		fmt.Println("No dependencies to install.")
+		return nil
+	}
+
+	return installFromConfig(cfg, lf, depsDir)
+}
+
+// installFromLock installs all packages recorded in the lockfile.
+func installFromLock(lf *lockfile.LockFile, depsDir string) error {
+	inst := bpkg.NewInstaller(depsDir)
+	newLf := lockfile.New()
+
+	for pkg, entry := range lf.Dependencies {
+		ref, err := bpkg.ParsePackageRef(pkg)
+		if err != nil {
+			return fmt.Errorf("parsing lockfile entry %s: %w", pkg, err)
+		}
+
+		// Pin to the locked commit hash
+		if entry.Commit != "" {
+			ref.Version = entry.Commit
+		} else if entry.Version != "" {
+			ref.Version = entry.Version
+		}
+
+		result, err := inst.Install(ref)
+		if err != nil {
+			return fmt.Errorf("installing %s: %w", pkg, err)
+		}
+		recordResults(newLf, result)
+		fmt.Printf("Installed %s\n", ref)
+	}
+
+	// Preserve lockfile
+	if err := newLf.Save("."); err != nil {
+		return fmt.Errorf("saving lockfile: %w", err)
+	}
+
+	return nil
+}
+
+// installFromConfig installs dependencies listed in .seirarc.json.
+func installFromConfig(cfg *config.Config, lf *lockfile.LockFile, depsDir string) error {
+	inst := bpkg.NewInstaller(depsDir)
+
+	for pkg, ver := range cfg.Dependencies {
+		ref, err := bpkg.ParsePackageRef(pkg)
+		if err != nil {
+			return fmt.Errorf("parsing dependency %s: %w", pkg, err)
+		}
+
+		if entry, ok := lf.Get(pkg); ok && entry.Commit != "" {
+			ref.Version = entry.Commit
+		} else if ver != "" && ver != "*" {
+			ref.Version = ver
+		}
+
+		result, err := inst.Install(ref)
+		if err != nil {
+			return fmt.Errorf("installing %s: %w", pkg, err)
+		}
+		recordResults(lf, result)
+		fmt.Printf("Installed %s\n", ref)
+	}
+
+	if err := lf.Save("."); err != nil {
+		return fmt.Errorf("saving lockfile: %w", err)
+	}
+
+	return nil
+}
+
 func depsCmd() *cobra.Command {
 	var depsDir string
 
-	return &cobra.Command{
+	cmd := &cobra.Command{
 		Use:   "deps",
-		Short: "Install all dependencies from .seirarc.json",
+		Short: "Install all dependencies from .seirarc.json (alias for install with no args)",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			cfg, err := config.Load(".")
-			if err != nil {
-				return fmt.Errorf("loading config: %w", err)
-			}
-
-			if len(cfg.Dependencies) == 0 {
-				fmt.Println("No dependencies configured in .seirarc.json")
-				return nil
-			}
-
-			if depsDir == "" {
-				depsDir = cfg.DepsDir
-			}
-
-			// Load existing lockfile
-			lf, err := lockfile.Load(".")
-			if err != nil {
-				return fmt.Errorf("loading lockfile: %w", err)
-			}
-
-			inst := bpkg.NewInstaller(depsDir)
-
-			for pkg, ver := range cfg.Dependencies {
-				ref, err := bpkg.ParsePackageRef(pkg)
-				if err != nil {
-					return fmt.Errorf("parsing dependency %s: %w", pkg, err)
-				}
-
-				// If lockfile has a pinned commit, use it as the version
-				if entry, ok := lf.Get(pkg); ok && entry.Commit != "" {
-					ref.Version = entry.Commit
-				} else if ver != "" && ver != "*" {
-					ref.Version = ver
-				}
-
-				result, err := inst.Install(ref)
-				if err != nil {
-					return fmt.Errorf("installing %s: %w", pkg, err)
-				}
-				recordResults(lf, result)
-				fmt.Printf("Installed %s\n", ref)
-			}
-
-			// Save updated lockfile
-			if err := lf.Save("."); err != nil {
-				return fmt.Errorf("saving lockfile: %w", err)
-			}
-
-			return nil
+			return installFromLockOrConfig(depsDir)
 		},
 	}
+
+	cmd.Flags().StringVar(&depsDir, "deps-dir", "", "deps directory (default: from config or ./deps)")
+	return cmd
 }
 
 // recordResults recursively records install results into the lockfile.
