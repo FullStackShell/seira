@@ -1,0 +1,8 @@
+{
+  "name": "seira",
+  "description": "Skills for working with seira shell script framework projects. Provides context about seira CLI, bundling, and package management.",
+  "version": "0.1.0",
+  "author": {
+    "name": "Hayao0819"
+  }
+}

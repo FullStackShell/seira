@@ -1,132 +1,87 @@
 ---
-name: seira
-description: "Seira shell script framework context. Use when working with seira projects (.seirarc.json), shell script bundling, source dependency resolution, or seira CLI commands."
+name: seira-dev
+description: "Seira internal development context. Use when modifying seira source code, adding features, fixing bugs, or understanding seira's internal architecture."
 user-invocable: false
 ---
 
-# Seira - Shell Script Framework & Bundler
+# Seira Development Guide
 
-Seira is a Go-based shell script framework and bundler. It resolves `source` dependencies recursively (including `${VAR=default}` variable expansion) and bundles scripts into standalone executables.
+This skill provides context for developers working on the seira codebase itself.
 
-Repository: https://github.com/Hayao0819/seira
+## Package Structure
 
-## CLI Commands
+All implementation packages live under `internal/`:
 
-```bash
-# Bundle a shell script project into a standalone executable
-seira bundle <input.sh> -o output.sh [--mode concat|tarball] [--minify] [--shebang /bin/bash]
-
-# Install a bpkg-compatible package from GitHub
-seira install <user/package[@version]> [--save]
-
-# Install all dependencies from .seirarc.json
-seira deps
-
-# Resolve a package file path in deps/
-seira path <owner/repo/path>
-
-# Parse and display the AST of a shell script
-seira ast <file.sh>
-
-# Create a new seira project with scaffolding
-seira new <project-name>
+```
+internal/
+  bundler/      Pipeline orchestrator with Mode interface
+  config/       .seirarc.json loading with upward directory search
+  depgraph/     DAG for dependency resolution (BFS + topological sort + cycle detection)
+  shellparse/   Shell script analysis using mvdan.cc/sh/v3
+  shell/        Shell execution utilities (EvalSh)
+  bpkg/         bpkg package manager integration (manifest parsing, GitHub install)
 ```
 
-## Bundle Modes
+## Key Dependencies
 
-- **concat** (recommended): Pure single-file shell script. Function definitions are placed at the top, side effects follow in topological order, source lines are stripped, and `main "$@"` is appended.
-- **tarball**: Self-extracting archive. Files are tarred, gzipped, base64-encoded into a self-extracting shell script. Requires temp dir extraction at runtime.
+- `mvdan.cc/sh/v3` — Shell parser and printer (AST, minification)
+- `github.com/spf13/cobra` — CLI framework
+- `github.com/Hayao0819/nahi` — Cobra utilities (maintained by project author, **DO NOT remove**)
+- `github.com/cockroachdb/errors` — Error wrapping with stack traces (**DO NOT remove**)
+- `github.com/samber/lo` — Generic utility functions
+- `github.com/m-mizutani/clog` — Structured logging
 
-## Project Configuration (.seirarc.json)
+## Data Flow
 
-```json
-{
-  "entrypoint": "main.sh",
-  "shebang": "/bin/bash",
-  "mode": "concat",
-  "env": {},
-  "include": [],
-  "exclude": [],
-  "dependencies": {
-    "user/package": "version"
-  },
-  "deps_dir": "deps"
+1. `cmd/bundle.go` loads config and CLI flags
+2. `bundler.New(cfg).Bundle()` orchestrates the pipeline
+3. `depgraph.Resolve()` recursively parses scripts via `shellparse.Parser`
+4. `graph.TopologicalSort()` produces dependency-first file order
+5. `resolveMode()` returns `TarballMode` or `ConcatMode`
+6. Mode-specific `Generate(ctx)` produces the output
+
+## Bundle Mode Interface
+
+```go
+type Mode interface {
+    Generate(ctx *BundleContext) error
 }
 ```
 
-| Field | Description | Default |
-|-------|-------------|---------|
-| `entrypoint` | Main script file | - |
-| `shebang` | Shebang line for output | `/bin/sh` |
-| `mode` | Bundle mode (`concat` or `tarball`) | `tarball` |
-| `env` | Variables for source path resolution at build time | `{}` |
-| `include` | Extra files to bundle even if not discovered by resolver | `[]` |
-| `exclude` | Files to exclude from bundling | `[]` |
-| `dependencies` | bpkg-style dependencies (`"user/name": "version"`) | `{}` |
-| `deps_dir` | Dependencies directory | `deps` |
+`BundleContext` holds: Graph, Order, BaseDir, Shebang, Minify, Output, DepsDir, HasDeps.
 
-## Entrypoint Requirements
+New bundle modes must implement this interface and be registered in `resolveMode()` (`bundler_new.go`).
 
-The entrypoint script **must** declare a `main()` function. Seira calls `main "$@"` at the end of the bundled output.
+## Statement Classification (concat mode)
 
-```bash
-#!/usr/bin/env bash
-source lib/helper.sh
+`shellparse.ClassifyStmts()` categorizes top-level statements:
+- `StmtFunc` — Function definitions (placed at top of output)
+- `StmtSource` — Source/. commands (removed, deps already inlined)
+- `StmtEffect` — Side effects: variable assignments, commands (preserved in topo order)
 
-main() {
-    greet "World"
-}
-```
+## Shell Parser
 
-## Source Resolution
+`shellparse.Parser` wraps `mvdan.cc/sh/v3/syntax.Parser`. `Analyze()` extracts:
+- `SourceRef` — source/. targets with Raw, Resolved, IsDynamic fields
+- Top-level function names
 
-Seira resolves `source` and `.` commands recursively, building a dependency graph (DAG). It supports:
+`EvaluateSourcePath()` handles `${VAR=default}`, `${VAR:-default}` expansion for build-time resolution.
 
-- Relative paths: `source ./lib/helper.sh`
-- Variable expansion with defaults: `source "${LIB_DIR:=lib}/helper.sh"`
-- Cycle detection (errors if circular dependencies found)
-- Dynamic paths that cannot be statically resolved are warned and skipped
+## Config Loading
 
-## Package Management (bpkg)
+`config.Load(dir)` walks upward from `dir` to find `.seirarc.json`. Returns `Default()` with no error if not found.
 
-Seira integrates with the bpkg ecosystem. Install packages from GitHub:
+## CLI Registration
 
-```bash
-seira install bpkg/term          # latest (master branch)
-seira install user/pkg@v1.0.0    # specific version (git tag)
-seira install user/pkg --save    # save to .seirarc.json
-seira deps                       # install all from config
-```
+Commands are registered in `cmd/root.go` via `cobrautils.Registory` from nahi. To add a new command:
 
-Installed packages go to `deps/<name>/` with symlinks in `deps/bin/`.
+1. Create `cmd/<name>.go` with a function returning `*cobra.Command`
+2. Add to `cmdReg.Add(...)` in `cmd/root.go`'s `init()`
 
-### Accessing Package Files (seira_path)
+## Long-term Vision
 
-Use `seira_path` in scripts to access files from installed packages:
-
-```bash
-# Resolve owner/repo/path to the actual file path
-cat "$(seira_path owner/repo/data.txt)"
-source "$(seira_path bpkg/term/term.sh)"
-```
-
-The `seira_path` function is automatically embedded when bundling projects that have a `deps/` directory.
-
-## Typical Project Structure
-
-```
-my-project/
-  .seirarc.json       # Project configuration
-  main.sh             # Entrypoint (must have main() function)
-  lib/                # Library scripts (sourced by main.sh)
-    helper.sh
-    utils.sh
-  deps/               # Installed packages (via seira install)
-    bin/              # Symlinks to package scripts
-    term/             # Installed bpkg package
-      term.sh
-```
-
-## For Developers Working on Seira Itself
-
-See [architecture.md](architecture.md) for internal package structure and contribution guidelines.
+Seira aims to be a comprehensive shell script development framework. Planned:
+- Tree-sitter integration
+- Package manager enhancements
+- Test framework
+- Object-oriented programming support
