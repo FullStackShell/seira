@@ -14,7 +14,8 @@ type Parser struct {
 }
 
 func NewParser(opts ...syntax.ParserOption) *Parser {
-	return &Parser{p: syntax.NewParser(opts...)}
+	defaults := []syntax.ParserOption{syntax.KeepComments(true)}
+	return &Parser{p: syntax.NewParser(append(defaults, opts...)...)}
 }
 
 func (p *Parser) Parse(r io.Reader, name string) (*syntax.File, error) {

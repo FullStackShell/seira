@@ -17,8 +17,9 @@ const (
 type ClassifiedStmt struct {
 	Kind       StmtKind
 	Stmt       *syntax.Stmt
-	FuncName   string // set when Kind == StmtFunc
-	SourcePath string // set when Kind == StmtSource (raw expression)
+	FuncName   string     // set when Kind == StmtFunc
+	SourcePath string     // set when Kind == StmtSource (raw expression)
+	Directives Directives // seira directives from preceding comments
 }
 
 // ClassifyStmts classifies top-level statements of a script.
@@ -31,12 +32,15 @@ func ClassifyStmts(stmts []*syntax.Stmt) []ClassifiedStmt {
 }
 
 func classifyStmt(stmt *syntax.Stmt) ClassifiedStmt {
+	directives := ParseDirectives(stmt.Comments)
+
 	// Check for function declaration
 	if fn, ok := stmt.Cmd.(*syntax.FuncDecl); ok {
 		return ClassifiedStmt{
-			Kind:     StmtFunc,
-			Stmt:     stmt,
-			FuncName: fn.Name.Value,
+			Kind:       StmtFunc,
+			Stmt:       stmt,
+			FuncName:   fn.Name.Value,
+			Directives: directives,
 		}
 	}
 
@@ -57,6 +61,7 @@ func classifyStmt(stmt *syntax.Stmt) ClassifiedStmt {
 					Kind:       StmtSource,
 					Stmt:       stmt,
 					SourcePath: raw,
+					Directives: directives,
 				}
 			}
 		}
@@ -64,8 +69,9 @@ func classifyStmt(stmt *syntax.Stmt) ClassifiedStmt {
 
 	// Everything else is a side effect
 	return ClassifiedStmt{
-		Kind: StmtEffect,
-		Stmt: stmt,
+		Kind:       StmtEffect,
+		Stmt:       stmt,
+		Directives: directives,
 	}
 }
 

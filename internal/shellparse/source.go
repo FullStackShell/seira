@@ -14,10 +14,13 @@ func extractSources(file *syntax.File) []SourceRef {
 			return true
 		}
 
+		directives := ParseDirectives(stmt.Comments)
+
 		for _, call := range findCmdCalls(stmt, "source", ".") {
 			// Arguments after the command name are the sourced files
 			for _, arg := range call.Args[1:] {
 				ref := evaluateSourcePathParts(arg.Parts, nil)
+				ref.Directives = directives
 				refs = append(refs, ref)
 			}
 		}

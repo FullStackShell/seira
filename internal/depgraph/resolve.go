@@ -54,6 +54,12 @@ func resolveFile(g *Graph, parser *shellparse.Parser, absPath string, env map[st
 
 	baseDir := filepath.Dir(absPath)
 	for _, src := range script.Sources {
+		// Skip sources marked with @seira:ignore directive
+		if src.Directives.Has("ignore") {
+			slog.Info("source ignored by directive", "file", absPath, "source", src.Raw)
+			continue
+		}
+
 		// Re-evaluate with the provided env
 		ref := shellparse.EvaluateSourcePath(src, env)
 

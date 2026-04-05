@@ -4,9 +4,10 @@ import "mvdan.cc/sh/v3/syntax"
 
 // SourceRef represents a source/. command found in a script.
 type SourceRef struct {
-	Raw       string // the original expression as written
-	Resolved  string // after variable default-value expansion
-	IsDynamic bool   // true if path could not be fully resolved statically
+	Raw        string     // the original expression as written
+	Resolved   string     // after variable default-value expansion
+	IsDynamic  bool       // true if path could not be fully resolved statically
+	Directives Directives // seira directives from preceding comments
 }
 
 // Script holds parsed metadata about a shell script.
