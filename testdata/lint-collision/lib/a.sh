@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+
+helper() {
+    echo "from a"
+}
