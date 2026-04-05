@@ -8,6 +8,7 @@ import (
 
 	"github.com/Hayao0819/seira/internal/bpkg"
 	"github.com/Hayao0819/seira/internal/config"
+	"github.com/Hayao0819/seira/internal/lockfile"
 	"github.com/spf13/cobra"
 )
 
@@ -33,11 +34,22 @@ func installCmd() *cobra.Command {
 			}
 
 			inst := bpkg.NewInstaller(depsDir)
-			if err := inst.Install(ref); err != nil {
+			result, err := inst.Install(ref)
+			if err != nil {
 				return err
 			}
 
 			fmt.Printf("Installed %s to %s/%s\n", ref, inst.DepsDir, ref.Name)
+
+			// Update lockfile
+			lf, err := lockfile.Load(".")
+			if err != nil {
+				return fmt.Errorf("loading lockfile: %w", err)
+			}
+			recordResults(lf, result)
+			if err := lf.Save("."); err != nil {
+				return fmt.Errorf("saving lockfile: %w", err)
+			}
 
 			// Save to .seirarc.json if --save flag is set
 			if save && cfgErr == nil {
@@ -76,6 +88,12 @@ func depsCmd() *cobra.Command {
 				depsDir = cfg.DepsDir
 			}
 
+			// Load existing lockfile
+			lf, err := lockfile.Load(".")
+			if err != nil {
+				return fmt.Errorf("loading lockfile: %w", err)
+			}
+
 			inst := bpkg.NewInstaller(depsDir)
 
 			for pkg, ver := range cfg.Dependencies {
@@ -83,17 +101,45 @@ func depsCmd() *cobra.Command {
 				if err != nil {
 					return fmt.Errorf("parsing dependency %s: %w", pkg, err)
 				}
-				if ver != "" && ver != "*" {
+
+				// If lockfile has a pinned commit, use it as the version
+				if entry, ok := lf.Get(pkg); ok && entry.Commit != "" {
+					ref.Version = entry.Commit
+				} else if ver != "" && ver != "*" {
 					ref.Version = ver
 				}
-				if err := inst.Install(ref); err != nil {
+
+				result, err := inst.Install(ref)
+				if err != nil {
 					return fmt.Errorf("installing %s: %w", pkg, err)
 				}
+				recordResults(lf, result)
 				fmt.Printf("Installed %s\n", ref)
+			}
+
+			// Save updated lockfile
+			if err := lf.Save("."); err != nil {
+				return fmt.Errorf("saving lockfile: %w", err)
 			}
 
 			return nil
 		},
+	}
+}
+
+// recordResults recursively records install results into the lockfile.
+func recordResults(lf *lockfile.LockFile, result *bpkg.InstallResult) {
+	if result == nil {
+		return
+	}
+	version := result.Ref.Version
+	if version == "master" {
+		version = ""
+	}
+	lf.Set(result.PkgKey(), version, result.Commit)
+
+	for _, sub := range result.Sub {
+		recordResults(lf, sub)
 	}
 }
 

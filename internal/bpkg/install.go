@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/Hayao0819/seira/internal/config"
 	"github.com/cockroachdb/errors"
 )
 
@@ -68,25 +69,58 @@ func NewInstaller(depsDir string) *Installer {
 	}
 }
 
+// InstallResult holds metadata about an installed package.
+type InstallResult struct {
+	Ref    *PackageRef
+	Commit string            // resolved git commit hash
+	Sub    []*InstallResult  // results from transitive dependencies
+}
+
+// PkgKey returns the canonical "user/name" key for this package.
+func (r *InstallResult) PkgKey() string {
+	return fmt.Sprintf("%s/%s", r.Ref.User, r.Ref.Name)
+}
+
 // Install downloads and installs a package locally.
 // It first tries bpkg-compatible install (manifest-based), then falls back to
 // git clone for repositories without bpkg.json.
-func (inst *Installer) Install(ref *PackageRef) error {
+// After installation, if the package is a seira project with dependencies,
+// those are installed recursively.
+func (inst *Installer) Install(ref *PackageRef) (*InstallResult, error) {
 	slog.Info("installing package", "package", ref.String())
 
+	var commit string
+	var err error
+
 	// Try bpkg-compatible install first
-	manifest, err := inst.fetchManifest(ref)
-	if err == nil {
-		return inst.installWithManifest(ref, manifest)
+	manifest, mErr := inst.fetchManifest(ref)
+	if mErr == nil {
+		commit, err = inst.installWithManifest(ref, manifest)
+	} else {
+		// Fallback: git clone for non-bpkg repositories
+		slog.Info("no bpkg manifest found, falling back to git clone", "package", ref.String())
+		commit, err = inst.installWithGitClone(ref)
+	}
+	if err != nil {
+		return nil, err
 	}
 
-	// Fallback: git clone for non-bpkg repositories
-	slog.Info("no bpkg manifest found, falling back to git clone", "package", ref.String())
-	return inst.installWithGitClone(ref)
+	result := &InstallResult{Ref: ref, Commit: commit}
+
+	// Resolve seira project dependencies recursively
+	pkgDir := filepath.Join(inst.DepsDir, ref.Name)
+	subResults, err := inst.resolveSeiraDepsFull(pkgDir)
+	if err != nil {
+		return nil, errors.Wrapf(err, "resolving seira dependencies for %s", ref.String())
+	}
+	result.Sub = subResults
+
+	return result, nil
 }
 
 // installWithManifest installs a package using its bpkg manifest.
-func (inst *Installer) installWithManifest(ref *PackageRef, manifest *Manifest) error {
+// Returns the resolved git commit hash.
+func (inst *Installer) installWithManifest(ref *PackageRef, manifest *Manifest) (string, error) {
 	pkgName := manifest.Name
 	if pkgName == "" {
 		pkgName = ref.Name
@@ -94,71 +128,78 @@ func (inst *Installer) installWithManifest(ref *PackageRef, manifest *Manifest) 
 
 	pkgDir := filepath.Join(inst.DepsDir, pkgName)
 	if err := os.MkdirAll(pkgDir, 0755); err != nil {
-		return errors.Wrap(err, "creating package directory")
+		return "", errors.Wrap(err, "creating package directory")
 	}
 
 	// Download scripts
 	for _, script := range manifest.Scripts {
 		if err := inst.downloadFile(ref, script, pkgDir); err != nil {
-			return errors.Wrapf(err, "downloading script %s", script)
+			return "", errors.Wrapf(err, "downloading script %s", script)
 		}
 		if err := os.Chmod(filepath.Join(pkgDir, script), 0755); err != nil {
-			return errors.Wrapf(err, "setting permissions for %s", script)
+			return "", errors.Wrapf(err, "setting permissions for %s", script)
 		}
 	}
 
 	// Download additional files
 	for _, file := range manifest.Files {
 		if err := inst.downloadFile(ref, file, pkgDir); err != nil {
-			return errors.Wrapf(err, "downloading file %s", file)
+			return "", errors.Wrapf(err, "downloading file %s", file)
 		}
 	}
 
 	// Write manifest to package directory
 	manifestData, err := json.MarshalIndent(manifest, "", "  ")
 	if err != nil {
-		return errors.Wrap(err, "marshaling manifest")
+		return "", errors.Wrap(err, "marshaling manifest")
 	}
 	if err := os.WriteFile(filepath.Join(pkgDir, "bpkg.json"), append(manifestData, '\n'), 0644); err != nil {
-		return errors.Wrap(err, "writing manifest")
+		return "", errors.Wrap(err, "writing manifest")
 	}
 
 	// Create symlinks in deps/bin/
 	if err := inst.createBinSymlinks(pkgName, manifest.Scripts); err != nil {
-		return err
+		return "", err
 	}
 
-	// Install transitive dependencies
+	// Install transitive bpkg dependencies
 	if len(manifest.Dependencies) > 0 {
 		slog.Info("installing transitive dependencies", "package", ref.String(), "count", len(manifest.Dependencies))
 		for pkg, ver := range manifest.Dependencies {
 			depRef, err := ParsePackageRef(pkg)
 			if err != nil {
-				return errors.Wrapf(err, "parsing dependency %s", pkg)
+				return "", errors.Wrapf(err, "parsing dependency %s", pkg)
 			}
 			if ver != "" && ver != "*" {
 				depRef.Version = ver
 			}
-			if err := inst.Install(depRef); err != nil {
-				return errors.Wrapf(err, "installing dependency %s", pkg)
+			if _, err := inst.Install(depRef); err != nil {
+				return "", errors.Wrapf(err, "installing dependency %s", pkg)
 			}
 		}
 	}
 
+	// Resolve commit hash via GitHub API
+	commit, err := inst.fetchCommitHash(ref)
+	if err != nil {
+		slog.Warn("could not resolve commit hash", "package", ref.String(), "error", err)
+		commit = ""
+	}
+
 	slog.Info("installed package (bpkg)", "package", ref.String(), "dir", pkgDir)
-	return nil
+	return commit, nil
 }
 
 // installWithGitClone installs a repository that doesn't have a bpkg manifest.
 // It clones the repository into a temp directory, then copies shell scripts and
-// relevant files to the deps directory.
-func (inst *Installer) installWithGitClone(ref *PackageRef) error {
+// relevant files to the deps directory. Returns the resolved commit hash.
+func (inst *Installer) installWithGitClone(ref *PackageRef) (string, error) {
 	cloneURL := fmt.Sprintf("https://github.com/%s/%s.git", ref.User, ref.Name)
 
 	// Clone to temp directory
 	tmpDir, err := os.MkdirTemp("", "seira-install-*")
 	if err != nil {
-		return errors.Wrap(err, "creating temp directory")
+		return "", errors.Wrap(err, "creating temp directory")
 	}
 	defer os.RemoveAll(tmpDir)
 
@@ -172,37 +213,114 @@ func (inst *Installer) installWithGitClone(ref *PackageRef) error {
 	if out, err := cmd.CombinedOutput(); err != nil {
 		// If branch-based clone fails for "master", also try "main"
 		if ref.Version == "master" {
-			cloneArgs[len(cloneArgs)-2] = cloneURL
+			// Remove the previously failed tmpDir and create fresh
+			os.RemoveAll(tmpDir)
+			os.MkdirAll(tmpDir, 0755)
 			cmd2 := exec.Command("git", "clone", "--depth", "1", "--branch", "main", cloneURL, tmpDir)
 			if out2, err2 := cmd2.CombinedOutput(); err2 != nil {
-				return errors.Wrapf(err, "git clone failed: %s\nAlso tried 'main': %s", out, out2)
+				return "", errors.Wrapf(err, "git clone failed: %s\nAlso tried 'main': %s", out, out2)
 			}
 		} else {
-			return errors.Wrapf(err, "git clone failed: %s", out)
+			return "", errors.Wrapf(err, "git clone failed: %s", out)
 		}
 	}
 
+	// Get commit hash before removing .git
+	commit := getGitHeadCommit(tmpDir)
+
 	pkgDir := filepath.Join(inst.DepsDir, ref.Name)
 	if err := os.MkdirAll(pkgDir, 0755); err != nil {
-		return errors.Wrap(err, "creating package directory")
+		return "", errors.Wrap(err, "creating package directory")
 	}
 
 	// Copy all files except .git directory
 	if err := copyDirContents(tmpDir, pkgDir); err != nil {
-		return errors.Wrap(err, "copying repository contents")
+		return "", errors.Wrap(err, "copying repository contents")
 	}
 
 	// Find shell scripts and create bin symlinks
 	scripts, err := findShellScripts(pkgDir)
 	if err != nil {
-		return errors.Wrap(err, "finding shell scripts")
+		return "", errors.Wrap(err, "finding shell scripts")
 	}
 	if err := inst.createBinSymlinks(ref.Name, scripts); err != nil {
-		return err
+		return "", err
 	}
 
 	slog.Info("installed package (git clone)", "package", ref.String(), "dir", pkgDir)
-	return nil
+	return commit, nil
+}
+
+// getGitHeadCommit returns the HEAD commit hash for a git repository.
+func getGitHeadCommit(repoDir string) string {
+	cmd := exec.Command("git", "-C", repoDir, "rev-parse", "HEAD")
+	out, err := cmd.Output()
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(out))
+}
+
+// fetchCommitHash resolves the commit hash for a package version via GitHub API.
+func (inst *Installer) fetchCommitHash(ref *PackageRef) (string, error) {
+	url := fmt.Sprintf("https://api.github.com/repos/%s/%s/commits/%s",
+		ref.User, ref.Name, ref.Version)
+
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("Accept", "application/vnd.github.v3+json")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("GitHub API returned %d for %s", resp.StatusCode, url)
+	}
+
+	var result struct {
+		SHA string `json:"sha"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return "", err
+	}
+	return result.SHA, nil
+}
+
+// resolveSeiraDepsFull checks if an installed package is a seira project
+// and recursively installs its dependencies.
+func (inst *Installer) resolveSeiraDepsFull(pkgDir string) ([]*InstallResult, error) {
+	cfg, err := config.Load(pkgDir)
+	if err != nil {
+		return nil, nil // not a seira project or config error, skip
+	}
+
+	if len(cfg.Dependencies) == 0 {
+		return nil, nil
+	}
+
+	slog.Info("resolving seira project dependencies", "dir", pkgDir, "count", len(cfg.Dependencies))
+
+	var results []*InstallResult
+	for pkg, ver := range cfg.Dependencies {
+		depRef, err := ParsePackageRef(pkg)
+		if err != nil {
+			return nil, errors.Wrapf(err, "parsing seira dependency %s", pkg)
+		}
+		if ver != "" && ver != "*" {
+			depRef.Version = ver
+		}
+		result, err := inst.Install(depRef)
+		if err != nil {
+			return nil, errors.Wrapf(err, "installing seira dependency %s", pkg)
+		}
+		results = append(results, result)
+	}
+	return results, nil
 }
 
 // createBinSymlinks creates symlinks in deps/bin/ for the given scripts.
