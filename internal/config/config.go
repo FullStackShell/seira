@@ -9,21 +9,25 @@ import (
 const configFileName = ".seirarc.json"
 
 type Config struct {
-	Entrypoint string            `json:"entrypoint"`
-	Shebang    string            `json:"shebang"`
-	Mode       string            `json:"mode"` // "tarball" or "concat", default "tarball"
-	Env        map[string]string `json:"env"`
-	Include    []string          `json:"include"`
-	Exclude    []string          `json:"exclude"`
+	Entrypoint   string            `json:"entrypoint"`
+	Shebang      string            `json:"shebang"`
+	Mode         string            `json:"mode"` // "tarball" or "concat", default "tarball"
+	Env          map[string]string `json:"env"`
+	Include      []string          `json:"include"`
+	Exclude      []string          `json:"exclude"`
+	Dependencies map[string]string `json:"dependencies"` // bpkg-style: "user/name": "version"
+	DepsDir      string            `json:"deps_dir"`     // deps directory (default: "deps")
 }
 
 // Default returns a Config with sensible defaults.
 func Default() *Config {
 	return &Config{
-		Shebang: "/bin/sh",
-		Env:     map[string]string{},
-		Include: []string{},
-		Exclude: []string{},
+		Shebang:      "/bin/sh",
+		Env:          map[string]string{},
+		Include:      []string{},
+		Exclude:      []string{},
+		Dependencies: map[string]string{},
+		DepsDir:      "deps",
 	}
 }
 
@@ -67,6 +71,12 @@ func parse(data []byte) (*Config, error) {
 	}
 	if cfg.Exclude == nil {
 		cfg.Exclude = []string{}
+	}
+	if cfg.Dependencies == nil {
+		cfg.Dependencies = map[string]string{}
+	}
+	if cfg.DepsDir == "" {
+		cfg.DepsDir = "deps"
 	}
 	return cfg, nil
 }

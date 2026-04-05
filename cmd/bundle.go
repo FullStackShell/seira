@@ -50,6 +50,7 @@ func bundleCmd() *cobra.Command {
 				Mode:       m,
 				Env:        cfg.Env,
 				Include:    cfg.Include,
+				DepsDir:    cfg.DepsDir,
 			}).Bundle()
 		},
 	}

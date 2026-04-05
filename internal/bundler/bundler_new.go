@@ -20,6 +20,7 @@ type Config struct {
 	Mode       string // "tarball" or "concat", default "tarball"
 	Env        map[string]string
 	Include    []string
+	DepsDir    string // deps directory (default: deps relative to BaseDir)
 }
 
 // Bundler orchestrates the full bundle pipeline.
@@ -110,6 +111,19 @@ func (b *Bundler) Bundle() error {
 		shebang = "/bin/sh"
 	}
 
+	// Detect deps directory
+	depsDir := filepath.Join(baseDir, "deps")
+	if b.cfg.DepsDir != "" {
+		depsDir = b.cfg.DepsDir
+		if !filepath.IsAbs(depsDir) {
+			depsDir = filepath.Join(baseDir, depsDir)
+		}
+	}
+	hasDeps := false
+	if info, err := os.Stat(depsDir); err == nil && info.IsDir() {
+		hasDeps = true
+	}
+
 	ctx := &BundleContext{
 		Graph:   graph,
 		Order:   order,
@@ -117,6 +131,8 @@ func (b *Bundler) Bundle() error {
 		Shebang: shebang,
 		Minify:  b.cfg.Minify,
 		Output:  outFile,
+		DepsDir: depsDir,
+		HasDeps: hasDeps,
 	}
 
 	mode := resolveMode(b.cfg.Mode)

@@ -20,4 +20,6 @@ type BundleContext struct {
 	Shebang string
 	Minify  bool
 	Output  io.Writer
+	DepsDir string // deps directory path (for seira_path support)
+	HasDeps bool   // whether a deps directory exists
 }

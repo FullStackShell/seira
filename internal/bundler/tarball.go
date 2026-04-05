@@ -28,6 +28,21 @@ func (m *TarballMode) Generate(ctx *BundleContext) error {
 		return errors.Wrap(err, "copying files")
 	}
 
+	// Copy deps directory if it exists
+	if ctx.HasDeps {
+		depsRel, err := filepath.Rel(ctx.BaseDir, ctx.DepsDir)
+		if err != nil {
+			depsRel = "deps"
+		}
+		destDeps := filepath.Join(workDir, depsRel)
+		if err := os.MkdirAll(destDeps, 0755); err != nil {
+			return errors.Wrap(err, "creating deps dir in work directory")
+		}
+		if err := copyDirRecursive(ctx.DepsDir, destDeps); err != nil {
+			return errors.Wrap(err, "copying deps directory")
+		}
+	}
+
 	// Minify if enabled
 	if ctx.Minify {
 		if err := minifyDir(workDir); err != nil {
@@ -48,7 +63,56 @@ func (m *TarballMode) Generate(ctx *BundleContext) error {
 	}
 
 	// Render output
-	return renderOutput(ctx.Output, tarball, ctx.Shebang, entryRel)
+	return renderOutput(ctx.Output, tarball, ctx.Shebang, entryRel, ctx.HasDeps)
+}
+
+// copyDirRecursive copies all contents from src to dst, excluding .git.
+func copyDirRecursive(src, dst string) error {
+	entries, err := os.ReadDir(src)
+	if err != nil {
+		return err
+	}
+	for _, entry := range entries {
+		if entry.Name() == ".git" {
+			continue
+		}
+		srcPath := filepath.Join(src, entry.Name())
+		dstPath := filepath.Join(dst, entry.Name())
+
+		if entry.Type()&os.ModeSymlink != 0 {
+			target, err := os.Readlink(srcPath)
+			if err != nil {
+				return err
+			}
+			os.Remove(dstPath)
+			if err := os.Symlink(target, dstPath); err != nil {
+				return err
+			}
+			continue
+		}
+
+		if entry.IsDir() {
+			if err := os.MkdirAll(dstPath, 0755); err != nil {
+				return err
+			}
+			if err := copyDirRecursive(srcPath, dstPath); err != nil {
+				return err
+			}
+		} else {
+			data, err := os.ReadFile(srcPath)
+			if err != nil {
+				return err
+			}
+			info, err := entry.Info()
+			if err != nil {
+				return err
+			}
+			if err := os.WriteFile(dstPath, data, info.Mode()); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
 
 // createTarball creates a tar.gz archive of the directory contents.
