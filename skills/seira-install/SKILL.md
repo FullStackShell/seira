@@ -22,7 +22,7 @@ seira install $ARGUMENTS
 # Install and save to .seirarc.json
 seira install <user/package[@version]> --save
 
-# Install all dependencies from .seirarc.json
+# Install all dependencies from .seirarc.json (uses lockfile for pinned versions)
 seira deps
 
 # Resolve a package file path
@@ -42,12 +42,55 @@ user/package@main       # specific branch
 ### bpkg-compatible packages (have bpkg.json)
 - Downloads only files listed in `scripts` and `files` arrays
 - Creates symlinks in `deps/bin/`
-- Installs transitive dependencies recursively
+- Installs transitive bpkg dependencies recursively
+- Resolves commit hash via GitHub API
 
 ### Non-bpkg repositories
 - Falls back to `git clone --depth 1`
 - Copies all files (excluding `.git/`)
 - Auto-detects `.sh` files for `deps/bin/` symlinks
+- Records HEAD commit hash from clone
+
+### Seira project detection
+After installing any package, seira checks if it is a seira project (has `.seirarc.json`). If the project has `dependencies`, they are recursively installed as well. This enables transitive dependency resolution across seira library projects.
+
+## Lockfile (.seira-lock.json)
+
+Every install operation updates `.seira-lock.json` with the exact git commit hash for each dependency:
+
+```json
+{
+  "dependencies": {
+    "user/repo": {
+      "version": "v1.0",
+      "commit": "abc123def456789..."
+    },
+    "user/other": {
+      "version": "",
+      "commit": "def789abc123456..."
+    }
+  }
+}
+```
+
+- `version`: The tag/branch specified at install time (empty if default/master)
+- `commit`: The exact git commit SHA resolved at install time
+
+When `seira deps` runs and a lockfile exists, it uses the locked commit hashes to ensure reproducible installs. This guarantees that all developers get the same dependency versions.
+
+## Library Dependencies
+
+If an installed package has `.seirarc.json` with `"type": "library"`, its functions are **automatically available** at bundle time — no `source` statement needed in your scripts. The bundler scans `deps/` for library projects and inlines their entrypoints into the dependency graph.
+
+```bash
+# Install a seira library
+seira install user/strutils --save
+
+# Use its functions directly in main.sh (no source needed)
+main() {
+    str_upper "hello"  # from strutils library
+}
+```
 
 ## Installed Structure
 
@@ -55,6 +98,7 @@ user/package@main       # specific branch
 deps/
   bin/              # Symlinks (script.sh → ../pkg/script.sh, extension stripped)
   <package-name>/   # Package contents
+    .seirarc.json   # If seira project (enables auto-loading for libraries)
     bpkg.json       # Manifest (if bpkg-compatible)
     *.sh            # Script files
 ```
@@ -62,7 +106,10 @@ deps/
 ## Using Packages in Scripts
 
 ```bash
-# Source directly
+# For library deps: just use the functions (auto-loaded at bundle time)
+str_upper "hello"
+
+# For non-library deps: source directly
 source ./deps/term/term.sh
 
 # Use seira_path for owner/repo/path resolution
@@ -79,7 +126,7 @@ term
 {
   "dependencies": {
     "bpkg/term": "0.1.1",
-    "user/package": "master"
+    "user/strutils": "v1.0"
   },
   "deps_dir": "deps"
 }
@@ -90,3 +137,4 @@ term
 - The `seira_path` shell function is automatically embedded in bundled output when `deps/` exists
 - `SEIRA_DEPS_DIR` env var overrides the deps directory at runtime
 - `--save` flag writes the dependency to `.seirarc.json` in the current directory
+- `.seira-lock.json` should be committed to version control for reproducible builds
