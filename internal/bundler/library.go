@@ -28,6 +28,7 @@ func (m *LibraryMode) Generate(ctx *BundleContext) error {
 
 	var funcs []funcBlock
 	var effects []effectBlock
+	usingNamespaces := map[string]bool{}
 
 	for _, path := range ctx.Order {
 		node := ctx.Graph.Node(path)
@@ -39,6 +40,12 @@ func (m *LibraryMode) Generate(ctx *BundleContext) error {
 
 		classified := shellparse.ClassifyStmts(node.Script.File.Stmts)
 		for _, cs := range classified {
+			for _, d := range cs.Directives.GetAll("using") {
+				if d.Args != "" {
+					usingNamespaces[d.Args] = true
+				}
+			}
+
 			switch cs.Kind {
 			case shellparse.StmtFunc:
 				if filterExports && !exportSet[cs.FuncName] {
@@ -50,6 +57,10 @@ func (m *LibraryMode) Generate(ctx *BundleContext) error {
 					stmt:   cs.Stmt,
 				})
 			case shellparse.StmtSource:
+				if cs.Directives.Has("ignore") {
+					effects = append(effects, effectBlock{origin: rel, stmt: cs.Stmt})
+					continue
+				}
 				continue
 			case shellparse.StmtEffect:
 				effects = append(effects, effectBlock{
@@ -59,6 +70,8 @@ func (m *LibraryMode) Generate(ctx *BundleContext) error {
 			}
 		}
 	}
+
+	aliases := resolveNamespaceAliases(funcs, usingNamespaces)
 
 	w := ctx.Output
 
@@ -88,6 +101,15 @@ func (m *LibraryMode) Generate(ctx *BundleContext) error {
 			if err := printStmt(printer, w, f.stmt); err != nil {
 				return errors.Wrapf(err, "printing function %s", f.name)
 			}
+		}
+		fmt.Fprintln(w)
+	}
+
+	// Namespace aliases
+	if len(aliases) > 0 {
+		fmt.Fprintln(w, "# === Namespace aliases ===")
+		for _, a := range aliases {
+			fmt.Fprintf(w, "%s() { %s \"$@\"; }\n", a.shortName, a.fullName)
 		}
 		fmt.Fprintln(w)
 	}

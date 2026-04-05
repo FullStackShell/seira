@@ -11,6 +11,7 @@ import (
 	"mvdan.cc/sh/v3/syntax"
 )
 
+
 // ConcatMode bundles scripts by concatenating them into a single file.
 // Function definitions are collected at the top, side effects follow in
 // topological (source) order, and source statements are removed.
@@ -35,6 +36,7 @@ func (m *ConcatMode) Generate(ctx *BundleContext) error {
 
 	var funcs []funcBlock
 	var effects []effectBlock
+	usingNamespaces := map[string]bool{}
 
 	// Process files in topological order (deps first, entrypoint last)
 	for _, path := range ctx.Order {
@@ -47,6 +49,13 @@ func (m *ConcatMode) Generate(ctx *BundleContext) error {
 
 		classified := shellparse.ClassifyStmts(node.Script.File.Stmts)
 		for _, cs := range classified {
+			// Collect @seira:using directives from all statements
+			for _, d := range cs.Directives.GetAll("using") {
+				if d.Args != "" {
+					usingNamespaces[d.Args] = true
+				}
+			}
+
 			switch cs.Kind {
 			case shellparse.StmtFunc:
 				funcs = append(funcs, funcBlock{
@@ -55,6 +64,11 @@ func (m *ConcatMode) Generate(ctx *BundleContext) error {
 					stmt:   cs.Stmt,
 				})
 			case shellparse.StmtSource:
+				if cs.Directives.Has("ignore") {
+					// @seira:ignore — keep source line for runtime resolution
+					effects = append(effects, effectBlock{origin: rel, stmt: cs.Stmt})
+					continue
+				}
 				// Skip — dependencies are already resolved
 				continue
 			case shellparse.StmtEffect:
@@ -65,6 +79,9 @@ func (m *ConcatMode) Generate(ctx *BundleContext) error {
 			}
 		}
 	}
+
+	// Build namespace aliases from @seira:using directives
+	aliases := resolveNamespaceAliases(funcs, usingNamespaces)
 
 	// Write output
 	w := ctx.Output
@@ -93,6 +110,15 @@ func (m *ConcatMode) Generate(ctx *BundleContext) error {
 			if err := printStmt(printer, w, f.stmt); err != nil {
 				return errors.Wrapf(err, "printing function %s", f.name)
 			}
+		}
+		fmt.Fprintln(w)
+	}
+
+	// Namespace aliases (@seira:using)
+	if len(aliases) > 0 {
+		fmt.Fprintln(w, "# === Namespace aliases ===")
+		for _, a := range aliases {
+			fmt.Fprintf(w, "%s() { %s \"$@\"; }\n", a.shortName, a.fullName)
 		}
 		fmt.Fprintln(w)
 	}

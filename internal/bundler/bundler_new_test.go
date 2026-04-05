@@ -379,6 +379,88 @@ func TestBundle_E2E_Consumer_WithLibrary(t *testing.T) {
 	}
 }
 
+func TestBundle_E2E_Concat_Directive_Ignore(t *testing.T) {
+	outDir := t.TempDir()
+	outPath := filepath.Join(outDir, "out.sh")
+
+	cfg := Config{
+		InputPath:  "../../testdata/directive/main.sh",
+		OutputPath: outPath,
+		BaseDir:    "../../testdata/directive",
+		Shebang:    "/bin/bash",
+		Mode:       "concat",
+	}
+	if err := New(cfg).Bundle(); err != nil {
+		t.Fatal(err)
+	}
+
+	data, err := os.ReadFile(outPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	content := string(data)
+
+	// The ignored source should remain in output
+	if !strings.Contains(content, "source /etc/myapp/config.sh") {
+		t.Errorf("ignored source should be preserved in output, got:\n%s", content)
+	}
+
+	// The bundled source (lib/helper.sh) should NOT appear as a source line
+	if strings.Contains(content, "source lib/helper.sh") {
+		t.Errorf("bundled source should be removed, got:\n%s", content)
+	}
+
+	// greet function should be inlined from lib/helper.sh
+	if !strings.Contains(content, "greet()") {
+		t.Errorf("greet function should be inlined, got:\n%s", content)
+	}
+}
+
+func TestBundle_E2E_Concat_UsingNamespace(t *testing.T) {
+	outDir := t.TempDir()
+	outPath := filepath.Join(outDir, "out.sh")
+
+	cfg := Config{
+		InputPath:  "../../testdata/using/main.sh",
+		OutputPath: outPath,
+		BaseDir:    "../../testdata/using",
+		Shebang:    "/bin/bash",
+		Mode:       "concat",
+	}
+	if err := New(cfg).Bundle(); err != nil {
+		t.Fatal(err)
+	}
+
+	data, err := os.ReadFile(outPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	content := string(data)
+
+	// Should contain the original namespaced functions
+	if !strings.Contains(content, "str::upper()") {
+		t.Errorf("should contain str::upper function, got:\n%s", content)
+	}
+
+	// Should contain generated aliases
+	if !strings.Contains(content, `upper() { str::upper "$@"; }`) {
+		t.Errorf("should contain upper alias, got:\n%s", content)
+	}
+	if !strings.Contains(content, `lower() { str::lower "$@"; }`) {
+		t.Errorf("should contain lower alias, got:\n%s", content)
+	}
+
+	// E2E: execute and verify
+	cmd := exec.Command(outPath)
+	out, err := cmd.Output()
+	if err != nil {
+		t.Fatalf("execution failed: %v\nscript:\n%s", err, content)
+	}
+	if got := strings.TrimSpace(string(out)); got != "HELLO" {
+		t.Errorf("output: got %q, want %q\nscript:\n%s", got, "HELLO", content)
+	}
+}
+
 func TestBundle_Circular(t *testing.T) {
 	outDir := t.TempDir()
 	outPath := filepath.Join(outDir, "out.sh")
