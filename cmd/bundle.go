@@ -10,10 +10,11 @@ import (
 
 func bundleCmd() *cobra.Command {
 	var (
-		output  string
-		minify  bool
-		shebang string
-		mode    string
+		output      string
+		minify      bool
+		shebang     string
+		mode        string
+		projectType string
 	)
 
 	cmd := &cobra.Command{
@@ -41,6 +42,11 @@ func bundleCmd() *cobra.Command {
 				m = mode
 			}
 
+			t := cfg.Type
+			if cmd.Flags().Changed("type") {
+				t = projectType
+			}
+
 			return bundler.New(bundler.Config{
 				InputPath:  input,
 				OutputPath: output,
@@ -48,8 +54,10 @@ func bundleCmd() *cobra.Command {
 				Minify:     minify,
 				Shebang:    sh,
 				Mode:       m,
+				Type:       t,
 				Env:        cfg.Env,
 				Include:    cfg.Include,
+				Exports:    cfg.Exports,
 				DepsDir:    cfg.DepsDir,
 			}).Bundle()
 		},
@@ -59,6 +67,7 @@ func bundleCmd() *cobra.Command {
 	cmd.Flags().BoolVarP(&minify, "minify", "m", false, "minify shell scripts")
 	cmd.Flags().StringVar(&shebang, "shebang", "", "shebang line (default: from config or /bin/sh)")
 	cmd.Flags().StringVar(&mode, "mode", "", "bundle mode: tarball or concat (default: from config or tarball)")
+	cmd.Flags().StringVar(&projectType, "type", "", "project type: executable or library (default: from config or executable)")
 
 	return cmd
 }

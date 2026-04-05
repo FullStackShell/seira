@@ -249,6 +249,136 @@ func TestBundle_E2E_Concat_SideEffect(t *testing.T) {
 	}
 }
 
+func TestBundle_Library(t *testing.T) {
+	outDir := t.TempDir()
+	outPath := filepath.Join(outDir, "out.sh")
+
+	cfg := Config{
+		InputPath:  "../../testdata/consumer/deps/strutils/index.sh",
+		OutputPath: outPath,
+		BaseDir:    "../../testdata/consumer/deps/strutils",
+		Shebang:    "/bin/bash",
+		Type:       "library",
+	}
+	if err := New(cfg).Bundle(); err != nil {
+		t.Fatal(err)
+	}
+
+	data, err := os.ReadFile(outPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	content := string(data)
+
+	// Library output should NOT have shebang or main "$@"
+	if strings.HasPrefix(content, "#!/") {
+		t.Error("library output should not have a shebang line")
+	}
+	if strings.Contains(content, `main "$@"`) {
+		t.Error("library output should not have main entry point")
+	}
+	// Should contain the library header
+	if !strings.Contains(content, "library mode") {
+		t.Errorf("library output should contain library mode header, got:\n%s", content)
+	}
+	// Should contain function definitions
+	if !strings.Contains(content, "str_upper") {
+		t.Error("library output should contain str_upper function")
+	}
+	if !strings.Contains(content, "str_lower") {
+		t.Error("library output should contain str_lower function")
+	}
+}
+
+func TestBundle_Library_NoMainRequired(t *testing.T) {
+	// Verify that library mode does NOT require a main() function
+	outDir := t.TempDir()
+	outPath := filepath.Join(outDir, "out.sh")
+
+	cfg := Config{
+		InputPath:  "../../testdata/consumer/deps/strutils/index.sh",
+		OutputPath: outPath,
+		BaseDir:    "../../testdata/consumer/deps/strutils",
+		Shebang:    "/bin/bash",
+		Type:       "library",
+	}
+	// Should succeed even though there's no main()
+	if err := New(cfg).Bundle(); err != nil {
+		t.Fatalf("library mode should not require main(): %v", err)
+	}
+}
+
+func TestBundle_Library_WithExports(t *testing.T) {
+	outDir := t.TempDir()
+	outPath := filepath.Join(outDir, "out.sh")
+
+	cfg := Config{
+		InputPath:  "../../testdata/consumer/deps/strutils/index.sh",
+		OutputPath: outPath,
+		BaseDir:    "../../testdata/consumer/deps/strutils",
+		Shebang:    "/bin/bash",
+		Type:       "library",
+		Exports:    []string{"str_upper"},
+	}
+	if err := New(cfg).Bundle(); err != nil {
+		t.Fatal(err)
+	}
+
+	data, err := os.ReadFile(outPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	content := string(data)
+
+	if !strings.Contains(content, "str_upper") {
+		t.Error("library output should contain exported str_upper function")
+	}
+	if strings.Contains(content, "str_lower()") {
+		t.Error("library output should NOT contain non-exported str_lower function")
+	}
+}
+
+func TestBundle_E2E_Consumer_WithLibrary(t *testing.T) {
+	outDir := t.TempDir()
+	outPath := filepath.Join(outDir, "out.sh")
+
+	cfg := Config{
+		InputPath:  "../../testdata/consumer/main.sh",
+		OutputPath: outPath,
+		BaseDir:    "../../testdata/consumer",
+		Shebang:    "/bin/bash",
+		Mode:       "concat",
+	}
+	if err := New(cfg).Bundle(); err != nil {
+		t.Fatal(err)
+	}
+
+	data, err := os.ReadFile(outPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	content := string(data)
+
+	// Should contain library functions inlined
+	if !strings.Contains(content, "str_upper") {
+		t.Error("consumer output should contain str_upper from library")
+	}
+	// Should contain main entry point
+	if !strings.Contains(content, `main "$@"`) {
+		t.Error("consumer output should have main entry point")
+	}
+
+	// E2E: execute and verify output
+	cmd := exec.Command(outPath)
+	out, err := cmd.Output()
+	if err != nil {
+		t.Fatalf("execution failed: %v\noutput: %s\nscript:\n%s", err, out, content)
+	}
+	if got := strings.TrimSpace(string(out)); got != "HELLO" {
+		t.Errorf("output: got %q, want %q\nscript:\n%s", got, "HELLO", content)
+	}
+}
+
 func TestBundle_Circular(t *testing.T) {
 	outDir := t.TempDir()
 	outPath := filepath.Join(outDir, "out.sh")

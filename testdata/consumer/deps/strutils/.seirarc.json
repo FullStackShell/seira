@@ -1,0 +1,5 @@
+{
+  "type": "library",
+  "entrypoint": "index.sh",
+  "shebang": "/bin/bash"
+}

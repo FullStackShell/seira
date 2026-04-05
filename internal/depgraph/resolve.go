@@ -29,6 +29,12 @@ func Resolve(parser *shellparse.Parser, entrypoint string, env map[string]string
 	return g, nil
 }
 
+// ResolveAdditional resolves a file and its dependencies into an existing graph.
+// Use this to inject additional entrypoints (e.g. library deps) after the initial Resolve.
+func ResolveAdditional(g *Graph, parser *shellparse.Parser, absPath string, env map[string]string) error {
+	return resolveFile(g, parser, absPath, env)
+}
+
 func resolveFile(g *Graph, parser *shellparse.Parser, absPath string, env map[string]string) error {
 	if g.HasNode(absPath) {
 		return nil

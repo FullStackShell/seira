@@ -1,9 +1,11 @@
 package bundler
 
 import (
+	"log/slog"
 	"os"
 	"path/filepath"
 
+	"github.com/Hayao0819/seira/internal/config"
 	"github.com/Hayao0819/seira/internal/depgraph"
 	"github.com/Hayao0819/seira/internal/shellparse"
 	"github.com/cockroachdb/errors"
@@ -18,9 +20,11 @@ type Config struct {
 	Minify     bool
 	Shebang    string
 	Mode       string // "tarball" or "concat", default "tarball"
+	Type       string // "executable" (default) or "library"
 	Env        map[string]string
 	Include    []string
-	DepsDir    string // deps directory (default: deps relative to BaseDir)
+	Exports    []string // library mode: exported function names
+	DepsDir    string   // deps directory (default: deps relative to BaseDir)
 }
 
 // Bundler orchestrates the full bundle pipeline.
@@ -37,7 +41,7 @@ func New(cfg Config) *Bundler {
 }
 
 // Bundle executes the full pipeline:
-// parse → resolve deps → validate main() → topo sort → dispatch to mode
+// parse → resolve deps → validate → topo sort → dispatch to mode
 func (b *Bundler) Bundle() error {
 	// 1. Resolve entrypoint absolute path
 	absInput, err := filepath.Abs(b.cfg.InputPath)
@@ -45,32 +49,56 @@ func (b *Bundler) Bundle() error {
 		return errors.Wrap(err, "resolving input path")
 	}
 
-	// 2. Build dependency graph
+	// 2. Resolve base directory
+	baseDir := b.cfg.BaseDir
+	if baseDir == "" {
+		baseDir = filepath.Dir(absInput)
+	}
+	baseDir, err = filepath.Abs(baseDir)
+	if err != nil {
+		return errors.Wrap(err, "resolving base dir")
+	}
+
+	// 3. Resolve deps directory
+	depsDir := filepath.Join(baseDir, "deps")
+	if b.cfg.DepsDir != "" {
+		depsDir = b.cfg.DepsDir
+		if !filepath.IsAbs(depsDir) {
+			depsDir = filepath.Join(baseDir, depsDir)
+		}
+	}
+
+	// 4. Build dependency graph (follows source statements recursively)
 	graph, err := depgraph.Resolve(b.parser, absInput, b.cfg.Env)
 	if err != nil {
 		return errors.Wrap(err, "resolving dependencies")
 	}
 
-	// 3. Validate entrypoint has main()
+	// 5. Auto-discover seira libraries in deps/ and inject into graph
+	if err := b.resolveLibraryDeps(graph, absInput, depsDir); err != nil {
+		return errors.Wrap(err, "resolving library dependencies")
+	}
+
+	// 6. Validate entrypoint
 	entryNode := graph.Node(absInput)
 	if entryNode == nil || entryNode.Script == nil {
 		return errors.Newf("entrypoint not found in graph: %s", absInput)
 	}
-	if !entryNode.Script.HasFunc("main") {
+	if b.cfg.Type != "library" && !entryNode.Script.HasFunc("main") {
 		return errors.Newf("entrypoint %s does not declare a main() function", absInput)
 	}
 
-	// 4. Topological sort
+	// 7. Topological sort
 	order, err := graph.TopologicalSort()
 	if err != nil {
 		return errors.Wrap(err, "topological sort")
 	}
 
-	// 5. Add include files
+	// 8. Add include files
 	for _, inc := range b.cfg.Include {
 		absInc := inc
 		if !filepath.IsAbs(inc) {
-			absInc = filepath.Join(b.cfg.BaseDir, inc)
+			absInc = filepath.Join(baseDir, inc)
 		}
 		found := false
 		for _, p := range order {
@@ -84,17 +112,7 @@ func (b *Bundler) Bundle() error {
 		}
 	}
 
-	// 6. Resolve base directory
-	baseDir := b.cfg.BaseDir
-	if baseDir == "" {
-		baseDir = filepath.Dir(absInput)
-	}
-	baseDir, err = filepath.Abs(baseDir)
-	if err != nil {
-		return errors.Wrap(err, "resolving base dir")
-	}
-
-	// 7. Prepare output file
+	// 9. Prepare output file
 	outPath := b.cfg.OutputPath
 	if err := os.MkdirAll(filepath.Dir(outPath), 0755); err != nil {
 		return errors.Wrap(err, "creating output directory")
@@ -105,37 +123,32 @@ func (b *Bundler) Bundle() error {
 	}
 	defer outFile.Close()
 
-	// 8. Build context and dispatch to mode
+	// 10. Build context and dispatch to mode
 	shebang := b.cfg.Shebang
 	if shebang == "" {
 		shebang = "/bin/sh"
 	}
 
-	// Detect deps directory
-	depsDir := filepath.Join(baseDir, "deps")
-	if b.cfg.DepsDir != "" {
-		depsDir = b.cfg.DepsDir
-		if !filepath.IsAbs(depsDir) {
-			depsDir = filepath.Join(baseDir, depsDir)
-		}
-	}
 	hasDeps := false
 	if info, err := os.Stat(depsDir); err == nil && info.IsDir() {
 		hasDeps = true
 	}
 
 	ctx := &BundleContext{
-		Graph:   graph,
-		Order:   order,
-		BaseDir: baseDir,
-		Shebang: shebang,
-		Minify:  b.cfg.Minify,
-		Output:  outFile,
-		DepsDir: depsDir,
-		HasDeps: hasDeps,
+		Graph:       graph,
+		Order:       order,
+		BaseDir:     baseDir,
+		Shebang:     shebang,
+		Minify:      b.cfg.Minify,
+		Output:      outFile,
+		DepsDir:     depsDir,
+		HasDeps:     hasDeps,
+		Type:        b.cfg.Type,
+		LibraryName: "",
+		Exports:     b.cfg.Exports,
 	}
 
-	mode := resolveMode(b.cfg.Mode)
+	mode := resolveMode(b.cfg.Mode, b.cfg.Type)
 	if err := mode.Generate(ctx); err != nil {
 		return errors.Wrap(err, "generating output")
 	}
@@ -148,8 +161,57 @@ func (b *Bundler) Bundle() error {
 	return nil
 }
 
-// resolveMode returns the Mode implementation for the given mode name.
-func resolveMode(name string) Mode {
+// resolveLibraryDeps scans the deps directory for seira library projects
+// and injects their entrypoints into the dependency graph.
+func (b *Bundler) resolveLibraryDeps(graph *depgraph.Graph, entrypoint string, depsDir string) error {
+	entries, err := os.ReadDir(depsDir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
+	}
+
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+
+		depDir := filepath.Join(depsDir, entry.Name())
+		cfg, err := config.Load(depDir)
+		if err != nil || cfg.Type != "library" {
+			continue
+		}
+
+		if cfg.Entrypoint == "" {
+			slog.Warn("library has no entrypoint, skipping", "library", entry.Name())
+			continue
+		}
+
+		libEntry := filepath.Join(depDir, cfg.Entrypoint)
+		if _, err := os.Stat(libEntry); err != nil {
+			slog.Warn("library entrypoint not found, skipping",
+				"library", entry.Name(), "entrypoint", libEntry)
+			continue
+		}
+
+		slog.Info("auto-loading library from deps", "library", entry.Name())
+
+		if err := depgraph.ResolveAdditional(graph, b.parser, libEntry, b.cfg.Env); err != nil {
+			return errors.Wrapf(err, "resolving library %s", entry.Name())
+		}
+
+		graph.AddEdge(entrypoint, libEntry)
+	}
+
+	return nil
+}
+
+// resolveMode returns the Mode implementation for the given mode name and project type.
+func resolveMode(name string, projectType string) Mode {
+	if projectType == "library" {
+		return &LibraryMode{}
+	}
 	switch name {
 	case "concat":
 		return &ConcatMode{}

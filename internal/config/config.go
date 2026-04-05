@@ -11,11 +11,13 @@ const configFileName = ".seirarc.json"
 type Config struct {
 	Entrypoint   string            `json:"entrypoint"`
 	Shebang      string            `json:"shebang"`
-	Mode         string            `json:"mode"` // "tarball" or "concat", default "tarball"
+	Mode         string            `json:"mode"`      // "tarball" or "concat", default "tarball"
+	Type         string            `json:"type"`      // "executable" (default) or "library"
 	Env          map[string]string `json:"env"`
 	Include      []string          `json:"include"`
 	Exclude      []string          `json:"exclude"`
 	Dependencies map[string]string `json:"dependencies"` // bpkg-style: "user/name": "version"
+	Exports      []string          `json:"exports"`      // library mode: exported function names (empty = all)
 	DepsDir      string            `json:"deps_dir"`     // deps directory (default: "deps")
 }
 
@@ -27,6 +29,7 @@ func Default() *Config {
 		Include:      []string{},
 		Exclude:      []string{},
 		Dependencies: map[string]string{},
+		Exports:      []string{},
 		DepsDir:      "deps",
 	}
 }
@@ -74,6 +77,9 @@ func parse(data []byte) (*Config, error) {
 	}
 	if cfg.Dependencies == nil {
 		cfg.Dependencies = map[string]string{}
+	}
+	if cfg.Exports == nil {
+		cfg.Exports = []string{}
 	}
 	if cfg.DepsDir == "" {
 		cfg.DepsDir = "deps"
