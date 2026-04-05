@@ -11,6 +11,7 @@ const configFileName = ".seirarc.json"
 type Config struct {
 	Entrypoint string            `json:"entrypoint"`
 	Shebang    string            `json:"shebang"`
+	Mode       string            `json:"mode"` // "tarball" or "concat", default "tarball"
 	Env        map[string]string `json:"env"`
 	Include    []string          `json:"include"`
 	Exclude    []string          `json:"exclude"`

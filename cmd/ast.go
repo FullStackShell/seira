@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/Hayao0819/seira/shellparse"
+	"github.com/Hayao0819/seira/internal/shellparse"
 	"github.com/spf13/cobra"
 )
 

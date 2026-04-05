@@ -6,7 +6,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/Hayao0819/seira/config"
+	"github.com/Hayao0819/seira/internal/config"
 	"github.com/spf13/cobra"
 )
 

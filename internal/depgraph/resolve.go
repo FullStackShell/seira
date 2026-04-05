@@ -5,7 +5,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/Hayao0819/seira/shellparse"
+	"github.com/Hayao0819/seira/internal/shellparse"
 )
 
 // Resolve builds a dependency graph starting from the given entrypoint.

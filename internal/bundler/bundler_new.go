@@ -4,8 +4,8 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/Hayao0819/seira/depgraph"
-	"github.com/Hayao0819/seira/shellparse"
+	"github.com/Hayao0819/seira/internal/depgraph"
+	"github.com/Hayao0819/seira/internal/shellparse"
 	"github.com/cockroachdb/errors"
 )
 
@@ -14,9 +14,10 @@ type Config struct {
 	InputPath  string
 	OutputPath string
 	BaseDir    string
-	WorkDir    string // empty → use os.MkdirTemp
+	WorkDir    string // only used by tarball mode for explicit work dir
 	Minify     bool
 	Shebang    string
+	Mode       string // "tarball" or "concat", default "tarball"
 	Env        map[string]string
 	Include    []string
 }
@@ -35,7 +36,7 @@ func New(cfg Config) *Bundler {
 }
 
 // Bundle executes the full pipeline:
-// parse → resolve deps → validate main() → topo sort → copy → minify → tarball → render output
+// parse → resolve deps → validate main() → topo sort → dispatch to mode
 func (b *Bundler) Bundle() error {
 	// 1. Resolve entrypoint absolute path
 	absInput, err := filepath.Abs(b.cfg.InputPath)
@@ -82,21 +83,7 @@ func (b *Bundler) Bundle() error {
 		}
 	}
 
-	// 6. Create work directory
-	workDir := b.cfg.WorkDir
-	if workDir == "" {
-		workDir, err = os.MkdirTemp("", "seira-work-*")
-		if err != nil {
-			return errors.Wrap(err, "creating work directory")
-		}
-		defer os.RemoveAll(workDir)
-	} else {
-		if err := os.MkdirAll(workDir, 0755); err != nil {
-			return errors.Wrap(err, "creating work directory")
-		}
-	}
-
-	// 7. Copy files to work directory
+	// 6. Resolve base directory
 	baseDir := b.cfg.BaseDir
 	if baseDir == "" {
 		baseDir = filepath.Dir(absInput)
@@ -105,35 +92,8 @@ func (b *Bundler) Bundle() error {
 	if err != nil {
 		return errors.Wrap(err, "resolving base dir")
 	}
-	if err := copyFiles(order, baseDir, workDir); err != nil {
-		return errors.Wrap(err, "copying files")
-	}
 
-	// 8. Minify if enabled
-	if b.cfg.Minify {
-		if err := minifyDir(workDir); err != nil {
-			return errors.Wrap(err, "minifying")
-		}
-	}
-
-	// 9. Create tarball
-	tarball, err := createTarball(workDir)
-	if err != nil {
-		return errors.Wrap(err, "creating tarball")
-	}
-
-	// 10. Determine entrypoint relative path for the template
-	entryRel, err := filepath.Rel(baseDir, absInput)
-	if err != nil {
-		return errors.Wrap(err, "computing entrypoint relative path")
-	}
-
-	// 11. Render output
-	shebang := b.cfg.Shebang
-	if shebang == "" {
-		shebang = "/bin/sh"
-	}
-
+	// 7. Prepare output file
 	outPath := b.cfg.OutputPath
 	if err := os.MkdirAll(filepath.Dir(outPath), 0755); err != nil {
 		return errors.Wrap(err, "creating output directory")
@@ -144,8 +104,24 @@ func (b *Bundler) Bundle() error {
 	}
 	defer outFile.Close()
 
-	if err := renderOutput(outFile, tarball, shebang, entryRel); err != nil {
-		return errors.Wrap(err, "rendering output")
+	// 8. Build context and dispatch to mode
+	shebang := b.cfg.Shebang
+	if shebang == "" {
+		shebang = "/bin/sh"
+	}
+
+	ctx := &BundleContext{
+		Graph:   graph,
+		Order:   order,
+		BaseDir: baseDir,
+		Shebang: shebang,
+		Minify:  b.cfg.Minify,
+		Output:  outFile,
+	}
+
+	mode := resolveMode(b.cfg.Mode)
+	if err := mode.Generate(ctx); err != nil {
+		return errors.Wrap(err, "generating output")
 	}
 
 	// Make output executable
@@ -154,6 +130,18 @@ func (b *Bundler) Bundle() error {
 	}
 
 	return nil
+}
+
+// resolveMode returns the Mode implementation for the given mode name.
+func resolveMode(name string) Mode {
+	switch name {
+	case "concat":
+		return &ConcatMode{}
+	case "tarball", "":
+		return &TarballMode{}
+	default:
+		return &TarballMode{}
+	}
 }
 
 // copyFiles copies files to work directory preserving relative paths from baseDir.

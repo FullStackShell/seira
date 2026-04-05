@@ -8,7 +8,48 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+
+	"github.com/cockroachdb/errors"
 )
+
+// TarballMode bundles scripts into a self-extracting tarball.
+type TarballMode struct{}
+
+func (m *TarballMode) Generate(ctx *BundleContext) error {
+	// Create work directory
+	workDir, err := os.MkdirTemp("", "seira-tarball-*")
+	if err != nil {
+		return errors.Wrap(err, "creating work directory")
+	}
+	defer os.RemoveAll(workDir)
+
+	// Copy files to work directory
+	if err := copyFiles(ctx.Order, ctx.BaseDir, workDir); err != nil {
+		return errors.Wrap(err, "copying files")
+	}
+
+	// Minify if enabled
+	if ctx.Minify {
+		if err := minifyDir(workDir); err != nil {
+			return errors.Wrap(err, "minifying")
+		}
+	}
+
+	// Create tarball
+	tarball, err := createTarball(workDir)
+	if err != nil {
+		return errors.Wrap(err, "creating tarball")
+	}
+
+	// Determine entrypoint relative path
+	entryRel, err := filepath.Rel(ctx.BaseDir, ctx.Order[len(ctx.Order)-1])
+	if err != nil {
+		return errors.Wrap(err, "computing entrypoint relative path")
+	}
+
+	// Render output
+	return renderOutput(ctx.Output, tarball, ctx.Shebang, entryRel)
+}
 
 // createTarball creates a tar.gz archive of the directory contents.
 func createTarball(dir string) ([]byte, error) {

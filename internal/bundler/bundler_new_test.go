@@ -13,9 +13,9 @@ func TestBundle_Simple(t *testing.T) {
 	outPath := filepath.Join(outDir, "out.sh")
 
 	cfg := Config{
-		InputPath:  "../testdata/simple/main.sh",
+		InputPath:  "../../testdata/simple/main.sh",
 		OutputPath: outPath,
-		BaseDir:    "../testdata/simple",
+		BaseDir:    "../../testdata/simple",
 		Shebang:    "/bin/bash",
 	}
 	b := New(cfg)
@@ -47,9 +47,9 @@ func TestBundle_WithDeps(t *testing.T) {
 	outPath := filepath.Join(outDir, "out.sh")
 
 	cfg := Config{
-		InputPath:  "../testdata/deps/main.sh",
+		InputPath:  "../../testdata/deps/main.sh",
 		OutputPath: outPath,
-		BaseDir:    "../testdata/deps",
+		BaseDir:    "../../testdata/deps",
 		Shebang:    "/bin/bash",
 	}
 	b := New(cfg)
@@ -67,9 +67,9 @@ func TestBundle_NoMainFunc(t *testing.T) {
 	outPath := filepath.Join(outDir, "out.sh")
 
 	cfg := Config{
-		InputPath:  "../testdata/deps/lib/helper.sh",
+		InputPath:  "../../testdata/deps/lib/helper.sh",
 		OutputPath: outPath,
-		BaseDir:    "../testdata/deps/lib",
+		BaseDir:    "../../testdata/deps/lib",
 		Shebang:    "/bin/bash",
 	}
 	b := New(cfg)
@@ -84,9 +84,9 @@ func TestBundle_WithMinify(t *testing.T) {
 	outPath := filepath.Join(outDir, "out.sh")
 
 	cfg := Config{
-		InputPath:  "../testdata/simple/main.sh",
+		InputPath:  "../../testdata/simple/main.sh",
 		OutputPath: outPath,
-		BaseDir:    "../testdata/simple",
+		BaseDir:    "../../testdata/simple",
 		Shebang:    "/bin/bash",
 		Minify:     true,
 	}
@@ -105,9 +105,9 @@ func TestBundle_E2E_Simple(t *testing.T) {
 	outPath := filepath.Join(outDir, "out.sh")
 
 	cfg := Config{
-		InputPath:  "../testdata/simple/main.sh",
+		InputPath:  "../../testdata/simple/main.sh",
 		OutputPath: outPath,
-		BaseDir:    "../testdata/simple",
+		BaseDir:    "../../testdata/simple",
 		Shebang:    "/bin/bash",
 	}
 	if err := New(cfg).Bundle(); err != nil {
@@ -129,9 +129,9 @@ func TestBundle_E2E_WithDeps(t *testing.T) {
 	outPath := filepath.Join(outDir, "out.sh")
 
 	cfg := Config{
-		InputPath:  "../testdata/deps/main.sh",
+		InputPath:  "../../testdata/deps/main.sh",
 		OutputPath: outPath,
-		BaseDir:    "../testdata/deps",
+		BaseDir:    "../../testdata/deps",
 		Shebang:    "/bin/bash",
 	}
 	if err := New(cfg).Bundle(); err != nil {
@@ -153,9 +153,9 @@ func TestBundle_E2E_VarPath(t *testing.T) {
 	outPath := filepath.Join(outDir, "out.sh")
 
 	cfg := Config{
-		InputPath:  "../testdata/varpath/main.sh",
+		InputPath:  "../../testdata/varpath/main.sh",
 		OutputPath: outPath,
-		BaseDir:    "../testdata/varpath",
+		BaseDir:    "../../testdata/varpath",
 		Shebang:    "/bin/bash",
 	}
 	if err := New(cfg).Bundle(); err != nil {
@@ -172,14 +172,91 @@ func TestBundle_E2E_VarPath(t *testing.T) {
 	}
 }
 
+func TestBundle_E2E_Concat_Simple(t *testing.T) {
+	outDir := t.TempDir()
+	outPath := filepath.Join(outDir, "out.sh")
+
+	cfg := Config{
+		InputPath:  "../../testdata/simple/main.sh",
+		OutputPath: outPath,
+		BaseDir:    "../../testdata/simple",
+		Shebang:    "/bin/bash",
+		Mode:       "concat",
+	}
+	if err := New(cfg).Bundle(); err != nil {
+		t.Fatal(err)
+	}
+
+	cmd := exec.Command(outPath)
+	out, err := cmd.Output()
+	if err != nil {
+		t.Fatalf("execution failed: %v\n%s", err, out)
+	}
+	if got := strings.TrimSpace(string(out)); got != "Hello from simple!" {
+		t.Errorf("output: got %q, want %q", got, "Hello from simple!")
+	}
+}
+
+func TestBundle_E2E_Concat_WithDeps(t *testing.T) {
+	outDir := t.TempDir()
+	outPath := filepath.Join(outDir, "out.sh")
+
+	cfg := Config{
+		InputPath:  "../../testdata/deps/main.sh",
+		OutputPath: outPath,
+		BaseDir:    "../../testdata/deps",
+		Shebang:    "/bin/bash",
+		Mode:       "concat",
+	}
+	if err := New(cfg).Bundle(); err != nil {
+		t.Fatal(err)
+	}
+
+	cmd := exec.Command(outPath)
+	out, err := cmd.Output()
+	if err != nil {
+		t.Fatalf("execution failed: %v\n%s", err, out)
+	}
+	if got := strings.TrimSpace(string(out)); got != "Hello, World!" {
+		t.Errorf("output: got %q, want %q", got, "Hello, World!")
+	}
+}
+
+func TestBundle_E2E_Concat_SideEffect(t *testing.T) {
+	outDir := t.TempDir()
+	outPath := filepath.Join(outDir, "out.sh")
+
+	cfg := Config{
+		InputPath:  "../../testdata/sideeffect/main.sh",
+		OutputPath: outPath,
+		BaseDir:    "../../testdata/sideeffect",
+		Shebang:    "/bin/bash",
+		Mode:       "concat",
+	}
+	if err := New(cfg).Bundle(); err != nil {
+		t.Fatal(err)
+	}
+
+	cmd := exec.Command(outPath)
+	out, err := cmd.Output()
+	if err != nil {
+		data, _ := os.ReadFile(outPath)
+		t.Fatalf("execution failed: %v\nstdout: %s\nscript:\n%s", err, out, data)
+	}
+	if got := strings.TrimSpace(string(out)); got != "Hello, World!" {
+		data, _ := os.ReadFile(outPath)
+		t.Errorf("output: got %q, want %q\nscript:\n%s", got, "Hello, World!", data)
+	}
+}
+
 func TestBundle_Circular(t *testing.T) {
 	outDir := t.TempDir()
 	outPath := filepath.Join(outDir, "out.sh")
 
 	cfg := Config{
-		InputPath:  "../testdata/circular/a.sh",
+		InputPath:  "../../testdata/circular/a.sh",
 		OutputPath: outPath,
-		BaseDir:    "../testdata/circular",
+		BaseDir:    "../../testdata/circular",
 		Shebang:    "/bin/bash",
 	}
 	b := New(cfg)

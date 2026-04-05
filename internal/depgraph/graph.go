@@ -1,7 +1,7 @@
 package depgraph
 
 import (
-	"github.com/Hayao0819/seira/shellparse"
+	"github.com/Hayao0819/seira/internal/shellparse"
 )
 
 // Node represents a script file in the dependency graph.

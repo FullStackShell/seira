@@ -3,7 +3,7 @@ package shell_test
 import (
 	"testing"
 
-	"github.com/Hayao0819/seira/shell"
+	"github.com/Hayao0819/seira/internal/shell"
 )
 
 func TestEvalSh(t *testing.T) {

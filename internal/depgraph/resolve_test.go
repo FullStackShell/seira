@@ -5,12 +5,12 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/Hayao0819/seira/shellparse"
+	"github.com/Hayao0819/seira/internal/shellparse"
 )
 
 func TestResolve_Simple(t *testing.T) {
 	parser := shellparse.NewParser()
-	entry, _ := filepath.Abs("../testdata/simple/main.sh")
+	entry, _ := filepath.Abs("../../testdata/simple/main.sh")
 
 	g, err := Resolve(parser, entry, nil)
 	if err != nil {
@@ -27,7 +27,7 @@ func TestResolve_Simple(t *testing.T) {
 
 func TestResolve_WithDeps(t *testing.T) {
 	parser := shellparse.NewParser()
-	entry, _ := filepath.Abs("../testdata/deps/main.sh")
+	entry, _ := filepath.Abs("../../testdata/deps/main.sh")
 
 	g, err := Resolve(parser, entry, nil)
 	if err != nil {
@@ -44,7 +44,7 @@ func TestResolve_WithDeps(t *testing.T) {
 	}
 
 	// helper.sh should come before main.sh in topological order
-	helperPath, _ := filepath.Abs("../testdata/deps/lib/helper.sh")
+	helperPath, _ := filepath.Abs("../../testdata/deps/lib/helper.sh")
 	idx := make(map[string]int)
 	for i, p := range order {
 		idx[p] = i
@@ -56,7 +56,7 @@ func TestResolve_WithDeps(t *testing.T) {
 
 func TestResolve_Circular(t *testing.T) {
 	parser := shellparse.NewParser()
-	entry, _ := filepath.Abs("../testdata/circular/a.sh")
+	entry, _ := filepath.Abs("../../testdata/circular/a.sh")
 
 	_, err := Resolve(parser, entry, nil)
 	if err == nil {
@@ -71,7 +71,7 @@ func TestResolve_Circular(t *testing.T) {
 
 func TestResolve_VarPath(t *testing.T) {
 	parser := shellparse.NewParser()
-	entry, _ := filepath.Abs("../testdata/varpath/main.sh")
+	entry, _ := filepath.Abs("../../testdata/varpath/main.sh")
 
 	g, err := Resolve(parser, entry, nil)
 	if err != nil {
