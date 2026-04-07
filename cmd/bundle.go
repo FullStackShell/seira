@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"fmt"
 	"path/filepath"
 
 	"github.com/Hayao0819/seira/internal/bundler"
@@ -8,7 +9,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func bundleCmd() *cobra.Command {
+func buildCmd() *cobra.Command {
 	var (
 		output      string
 		minify      bool
@@ -19,14 +20,38 @@ func bundleCmd() *cobra.Command {
 	)
 
 	cmd := &cobra.Command{
-		Use:   "bundle <input-file>",
-		Short: "Bundle shell scripts into a standalone executable",
-		Args:  cobra.ExactArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			input := args[0]
-			baseDir := filepath.Dir(input)
+		Use:     "build [input-file]",
+		Aliases: []string{"bundle"},
+		Short:   "Bundle shell scripts into a standalone executable",
+		Long: `Bundle shell scripts into a standalone executable.
 
-			// Load config from input file's directory
+If input-file is specified, it is used as the entry point.
+If omitted, the entrypoint is read from .seirarc.json.`,
+		Args: cobra.MaximumNArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			var input, baseDir string
+
+			if len(args) == 1 {
+				// Explicit input file specified
+				input = args[0]
+				baseDir = filepath.Dir(input)
+			} else {
+				// No input file: resolve from config
+				cfg, cfgDir, err := config.LoadWithDir(".")
+				if err != nil {
+					return err
+				}
+				if cfg.Entrypoint == "" {
+					return fmt.Errorf("no input file specified and no entrypoint defined in .seirarc.json")
+				}
+				if cfgDir == "" {
+					return fmt.Errorf("no input file specified and no .seirarc.json found")
+				}
+				input = filepath.Join(cfgDir, cfg.Entrypoint)
+				baseDir = cfgDir
+			}
+
+			// Load config from base directory
 			cfg, err := config.Load(baseDir)
 			if err != nil {
 				return err

@@ -9,7 +9,7 @@ import (
 func TestLoadFromDir(t *testing.T) {
 	dir := t.TempDir()
 	data := `{"entrypoint": "main.sh", "shebang": "/bin/bash", "env": {"FOO": "bar"}, "include": ["extra.sh"], "exclude": []}`
-	if err := os.WriteFile(filepath.Join(dir, configFileName), []byte(data), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, ".seirarc.json"), []byte(data), 0644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -31,6 +31,40 @@ func TestLoadFromDir(t *testing.T) {
 	}
 }
 
+func TestLoadFromDirNoDot(t *testing.T) {
+	dir := t.TempDir()
+	data := `{"entrypoint": "entry.sh", "shebang": "/bin/bash"}`
+	if err := os.WriteFile(filepath.Join(dir, "seirarc.json"), []byte(data), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := Load(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Entrypoint != "entry.sh" {
+		t.Errorf("Entrypoint: got %q, want %q", cfg.Entrypoint, "entry.sh")
+	}
+}
+
+func TestLoadNoDotTakesPrecedence(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "seirarc.json"), []byte(`{"entrypoint": "nodot.sh"}`), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, ".seirarc.json"), []byte(`{"entrypoint": "dot.sh"}`), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := Load(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Entrypoint != "nodot.sh" {
+		t.Errorf("seirarc.json should take precedence: got %q, want %q", cfg.Entrypoint, "nodot.sh")
+	}
+}
+
 func TestLoadFromParent(t *testing.T) {
 	parent := t.TempDir()
 	child := filepath.Join(parent, "sub", "dir")
@@ -38,7 +72,7 @@ func TestLoadFromParent(t *testing.T) {
 		t.Fatal(err)
 	}
 	data := `{"entrypoint": "test.sh"}`
-	if err := os.WriteFile(filepath.Join(parent, configFileName), []byte(data), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(parent, ".seirarc.json"), []byte(data), 0644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -67,7 +101,7 @@ func TestLoadDefault(t *testing.T) {
 
 func TestLoadMalformedJSON(t *testing.T) {
 	dir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(dir, configFileName), []byte("{invalid"), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, ".seirarc.json"), []byte("{invalid"), 0644); err != nil {
 		t.Fatal(err)
 	}
 	_, err := Load(dir)
