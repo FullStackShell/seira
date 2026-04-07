@@ -1,0 +1,5 @@
+{
+  "entrypoint": "main.sh",
+  "shebang": "/bin/bash",
+  "mode": "concat"
+}
