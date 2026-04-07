@@ -1,7 +1,0 @@
-{
-  "entrypoint": "test.sh",
-  "shebang": "/bin/bash",
-  "env": {},
-  "include": [],
-  "exclude": []
-}
