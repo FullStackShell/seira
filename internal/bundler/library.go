@@ -71,6 +71,14 @@ func (m *LibraryMode) Generate(ctx *BundleContext) error {
 		}
 	}
 
+	// Tree shake: remove unreachable functions
+	if ctx.TreeShake {
+		// For library mode, exported functions are roots
+		roots := make([]string, len(ctx.Exports))
+		copy(roots, ctx.Exports)
+		funcs = TreeShake(funcs, effects, roots)
+	}
+
 	aliases := resolveNamespaceAliases(funcs, usingNamespaces)
 
 	w := ctx.Output

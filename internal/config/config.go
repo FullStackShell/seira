@@ -19,6 +19,7 @@ type Config struct {
 	Dependencies map[string]string `json:"dependencies"` // bpkg-style: "user/name": "version"
 	Exports      []string          `json:"exports"`      // library mode: exported function names (empty = all)
 	DepsDir      string            `json:"deps_dir"`     // deps directory (default: "deps")
+	TreeShake    bool              `json:"treeshake"`    // enable tree shaking
 }
 
 // Default returns a Config with sensible defaults.

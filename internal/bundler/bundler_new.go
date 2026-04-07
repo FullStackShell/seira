@@ -25,6 +25,7 @@ type Config struct {
 	Include    []string
 	Exports    []string // library mode: exported function names
 	DepsDir    string   // deps directory (default: deps relative to BaseDir)
+	TreeShake  bool     // enable tree shaking (remove unused functions)
 }
 
 // Bundler orchestrates the full bundle pipeline.
@@ -146,6 +147,7 @@ func (b *Bundler) Bundle() error {
 		Type:        b.cfg.Type,
 		LibraryName: "",
 		Exports:     b.cfg.Exports,
+		TreeShake:   b.cfg.TreeShake,
 	}
 
 	mode := resolveMode(b.cfg.Mode, b.cfg.Type)

@@ -15,6 +15,7 @@ func bundleCmd() *cobra.Command {
 		shebang     string
 		mode        string
 		projectType string
+		treeshake   bool
 	)
 
 	cmd := &cobra.Command{
@@ -47,6 +48,11 @@ func bundleCmd() *cobra.Command {
 				t = projectType
 			}
 
+			ts := cfg.TreeShake
+			if cmd.Flags().Changed("treeshake") {
+				ts = treeshake
+			}
+
 			return bundler.New(bundler.Config{
 				InputPath:  input,
 				OutputPath: output,
@@ -59,6 +65,7 @@ func bundleCmd() *cobra.Command {
 				Include:    cfg.Include,
 				Exports:    cfg.Exports,
 				DepsDir:    cfg.DepsDir,
+				TreeShake:  ts,
 			}).Bundle()
 		},
 	}
@@ -68,6 +75,7 @@ func bundleCmd() *cobra.Command {
 	cmd.Flags().StringVar(&shebang, "shebang", "", "shebang line (default: from config or /bin/sh)")
 	cmd.Flags().StringVar(&mode, "mode", "", "bundle mode: tarball or concat (default: from config or tarball)")
 	cmd.Flags().StringVar(&projectType, "type", "", "project type: executable or library (default: from config or executable)")
+	cmd.Flags().BoolVar(&treeshake, "treeshake", false, "enable tree shaking to remove unused functions")
 
 	return cmd
 }

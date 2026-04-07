@@ -28,6 +28,7 @@ type BundleContext struct {
 	Type        string // "executable" or "library"
 	LibraryName string // library name (used in library mode header)
 	Exports     []string // library mode: exported function names
+	TreeShake   bool     // enable tree shaking (remove unused functions)
 }
 
 // namespaceAlias represents a short-name alias for a namespaced function.

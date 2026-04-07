@@ -80,6 +80,11 @@ func (m *ConcatMode) Generate(ctx *BundleContext) error {
 		}
 	}
 
+	// Tree shake: remove unreachable functions
+	if ctx.TreeShake {
+		funcs = TreeShake(funcs, effects, []string{"main"})
+	}
+
 	// Build namespace aliases from @seira:using directives
 	aliases := resolveNamespaceAliases(funcs, usingNamespaces)
 
