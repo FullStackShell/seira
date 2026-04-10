@@ -194,6 +194,68 @@ func TestParseFileHeader(t *testing.T) {
 	}
 }
 
+func TestIsToolDirective(t *testing.T) {
+	tests := []struct {
+		line string
+		want bool
+	}{
+		{"shellcheck disable=SC1091", true},
+		{"shellcheck source=lib.sh", true},
+		{"noinspection ShellNoOp", true},
+		{"@description This is doc", false},
+		{"  continuation line", false},
+		{"", false},
+	}
+	for _, tt := range tests {
+		got := isToolDirective(tt.line)
+		if got != tt.want {
+			t.Errorf("isToolDirective(%q) = %v, want %v", tt.line, got, tt.want)
+		}
+	}
+}
+
+func TestParseFileHeader_SkipsShellcheck(t *testing.T) {
+	comments := makeComments(
+		"@file mylib.sh",
+		"@brief A library",
+		"@description This library provides",
+		"useful functions for scripting",
+		"shellcheck disable=SC1091",
+	)
+	db := collectDocBlock(comments)
+	name, brief, desc, _ := parseFileHeader(db)
+
+	if name != "mylib.sh" {
+		t.Errorf("expected name 'mylib.sh', got %q", name)
+	}
+	if brief != "A library" {
+		t.Errorf("expected brief 'A library', got %q", brief)
+	}
+	expected := "This library provides\nuseful functions for scripting"
+	if desc != expected {
+		t.Errorf("expected description %q, got %q", expected, desc)
+	}
+}
+
+func TestParseFuncDoc_SkipsShellcheck(t *testing.T) {
+	comments := makeComments(
+		"@description Multi-line description",
+		"that continues here",
+		"shellcheck disable=SC2086",
+		"@param $1 First argument",
+	)
+	db := collectDocBlock(comments)
+	fd := parseFuncDoc(db, "test_func", 1)
+
+	expected := "Multi-line description\nthat continues here"
+	if fd.Description != expected {
+		t.Errorf("expected description %q, got %q", expected, fd.Description)
+	}
+	if len(fd.Params) != 1 {
+		t.Fatalf("expected 1 param, got %d", len(fd.Params))
+	}
+}
+
 func TestParseFuncDoc_ArgAlias(t *testing.T) {
 	comments := makeComments(
 		"@description Test arg alias",

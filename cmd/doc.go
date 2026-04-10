@@ -86,12 +86,21 @@ If no input file is given, uses the entrypoint from .seirarc.json.`,
 				}
 			}
 
+			// Build exclude list for external packages
+			var excludeDirs []string
+			depsDir := cfg.DepsDir
+			if depsDir == "" {
+				depsDir = "deps"
+			}
+			absDeps := filepath.Join(absBase, depsDir)
+			excludeDirs = append(excludeDirs, absDeps)
+
 			// Extract documentation
 			docTitle := title
 			if docTitle == "" {
 				docTitle = filepath.Base(absBase)
 			}
-			pd := doc.ExtractProject(graph, absBase, docTitle)
+			pd := doc.ExtractProject(graph, absBase, docTitle, excludeDirs)
 
 			if len(pd.Files) == 0 {
 				fmt.Fprintln(os.Stderr, "No documented files found.")

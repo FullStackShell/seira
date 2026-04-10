@@ -43,6 +43,22 @@ func collectDocBlock(comments []syntax.Comment) docBlock {
 	return docBlock{lines: lines, pos: pos}
 }
 
+// isToolDirective returns true if the line is a tool directive comment
+// (e.g. shellcheck, noinspection) that should not be treated as doc content.
+func isToolDirective(line string) bool {
+	trimmed := strings.TrimSpace(line)
+	prefixes := []string{
+		"shellcheck ",
+		"noinspection ",
+	}
+	for _, p := range prefixes {
+		if strings.HasPrefix(trimmed, p) {
+			return true
+		}
+	}
+	return false
+}
+
 // isDocTag returns true if the line starts with a recognized documentation tag.
 func isDocTag(line string) bool {
 	trimmed := strings.TrimSpace(line)
@@ -88,6 +104,8 @@ func parseFuncDoc(db docBlock, funcName string, line int) FuncDoc {
 				exampleLines = nil
 				inExample = false
 				// Fall through to process this tag
+			} else if isToolDirective(trimmed) {
+				continue // skip tool directives
 			} else if trimmed == "" || !isDocTag(trimmed) {
 				exampleLines = append(exampleLines, rawLine)
 				continue
@@ -104,6 +122,8 @@ func parseFuncDoc(db docBlock, funcName string, line int) FuncDoc {
 			if isDocTag(trimmed) {
 				inDescription = false
 				// Fall through to process this tag
+			} else if isToolDirective(trimmed) {
+				continue // skip tool directives
 			} else {
 				descLines = append(descLines, rawLine)
 				continue
@@ -224,6 +244,8 @@ func parseFileHeader(db docBlock) (name, brief, description string, vars []Varia
 		if inDescription {
 			if isDocTag(trimmed) {
 				inDescription = false
+			} else if isToolDirective(trimmed) {
+				continue // skip tool directives
 			} else {
 				descLines = append(descLines, rawLine)
 				continue

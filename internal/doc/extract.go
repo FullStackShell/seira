@@ -72,7 +72,9 @@ func ExtractFile(script *shellparse.Script, baseDir string) FileDoc {
 }
 
 // ExtractProject extracts documentation from all files in a dependency graph.
-func ExtractProject(graph *depgraph.Graph, baseDir string, title string) ProjectDoc {
+// excludeDirs specifies directory prefixes (absolute paths) whose files should
+// be excluded from documentation (e.g. external package directories).
+func ExtractProject(graph *depgraph.Graph, baseDir string, title string, excludeDirs []string) ProjectDoc {
 	order, err := graph.TopologicalSort()
 	if err != nil {
 		slog.Warn("could not topologically sort files, using unordered", "error", err)
@@ -87,6 +89,10 @@ func ExtractProject(graph *depgraph.Graph, baseDir string, title string) Project
 	}
 
 	for _, path := range order {
+		if isExcluded(path, excludeDirs) {
+			slog.Debug("excluding external package from documentation", "path", path)
+			continue
+		}
 		node := graph.Node(path)
 		if node == nil || node.Script == nil {
 			continue
@@ -100,6 +106,21 @@ func ExtractProject(graph *depgraph.Graph, baseDir string, title string) Project
 	}
 
 	return pd
+}
+
+// isExcluded returns true if path is under any of the excluded directories.
+func isExcluded(path string, excludeDirs []string) bool {
+	for _, dir := range excludeDirs {
+		rel, err := filepath.Rel(dir, path)
+		if err != nil {
+			continue
+		}
+		// If rel doesn't start with "..", path is inside dir
+		if !filepath.IsAbs(rel) && (rel == "." || len(rel) < 2 || rel[:2] != "..") {
+			return true
+		}
+	}
+	return false
 }
 
 // extractFileHeader gathers comments that appear before the first statement
