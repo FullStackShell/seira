@@ -1,6 +1,6 @@
 ---
 name: seira
-description: "Seira shell script framework context. Use when working with seira projects (.seirarc.json), shell script bundling, source dependency resolution, or seira CLI commands."
+description: "Seira shell script framework context. Use when working with seira projects (.seirarc.json), shell script bundling, source dependency resolution, documentation generation, or seira CLI commands."
 user-invocable: false
 ---
 
@@ -27,6 +27,9 @@ seira path <owner/repo/path>
 
 # Parse and display the AST of a shell script
 seira ast <file.sh>
+
+# Generate documentation from doc comments
+seira doc [input.sh] [--format markdown|html] [-o output-file] [--title "Title"]
 
 # Create a new seira project with scaffolding
 seira new <project-name> [--library]
@@ -161,6 +164,62 @@ source "$(seira_path bpkg/term/term.sh)"
 ```
 
 The `seira_path` function is automatically embedded when bundling projects that have a `deps/` directory.
+
+## Documentation Generation
+
+Generate API documentation from shdoc-compatible doc comments in shell scripts.
+
+```bash
+# Markdown output (default)
+seira doc main.sh -o docs/api.md
+
+# HTML output with custom title
+seira doc --format html --title "My API" -o docs/index.html
+
+# Use entrypoint from .seirarc.json
+seira doc -f html -o docs/api.html
+```
+
+### Supported Doc Tags
+
+| Tag | Level | Description |
+|-----|-------|-------------|
+| `@file` | File | File name/title |
+| `@brief` | File | One-line summary |
+| `@description` | Both | Detailed description (multi-line) |
+| `@param` / `@arg` | Function | Parameter: `@param $1 Description` |
+| `@option` | Function | Flag/option: `@option -f --force Description` |
+| `@stdin` | Function | Expected stdin input |
+| `@stdout` | Function | What is written to stdout |
+| `@return` | Function | Return value description |
+| `@exitcode` | Function | Exit code: `@exitcode 0 Success` |
+| `@example` | Function | Code example block (multi-line) |
+| `@set` | Both | Global variable set: `@set VAR Description` |
+| `@see` | Function | Cross-reference to another function |
+| `@internal` | Function | Hide from generated documentation |
+| `@section` | File | Group subsequent functions under a heading |
+| `@noargs` | Function | Marker: function takes no arguments |
+
+### Example
+
+```bash
+# @file strutils.sh
+# @brief String utility functions
+
+# @section Case Conversion
+
+# @description Convert a string to uppercase
+# @param $1 Input string
+# @stdout The uppercased string
+# @example
+#   str_upper "hello"
+#   # Output: HELLO
+str_upper() {
+    echo "${1^^}"
+}
+```
+
+The `doc` command resolves the full dependency graph and generates documentation for all files containing doc comments, ordered topologically.
 
 ## Typical Project Structures
 
