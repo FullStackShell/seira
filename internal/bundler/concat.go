@@ -112,7 +112,7 @@ func (m *ConcatMode) Generate(ctx *BundleContext) error {
 				currentOrigin = f.origin
 				fmt.Fprintf(w, "\n# from %s\n", currentOrigin)
 			}
-			if err := printStmt(printer, w, f.stmt); err != nil {
+			if err := printStmt(printer, w, f.stmt, ctx.StripComments); err != nil {
 				return errors.Wrapf(err, "printing function %s", f.name)
 			}
 		}
@@ -137,7 +137,7 @@ func (m *ConcatMode) Generate(ctx *BundleContext) error {
 				currentOrigin = e.origin
 				fmt.Fprintf(w, "\n# from %s\n", currentOrigin)
 			}
-			if err := printStmt(printer, w, e.stmt); err != nil {
+			if err := printStmt(printer, w, e.stmt, ctx.StripComments); err != nil {
 				return errors.Wrap(err, "printing side effect")
 			}
 		}
@@ -151,11 +151,21 @@ func (m *ConcatMode) Generate(ctx *BundleContext) error {
 	return nil
 }
 
-func printStmt(printer *syntax.Printer, w io.Writer, stmt *syntax.Stmt) error {
+func printStmt(printer *syntax.Printer, w io.Writer, stmt *syntax.Stmt, stripComments bool) error {
+	if stripComments {
+		stmt = stripStmtComments(stmt)
+	}
 	var buf bytes.Buffer
 	if err := printer.Print(&buf, stmt); err != nil {
 		return err
 	}
 	_, err := fmt.Fprintln(w, buf.String())
 	return err
+}
+
+// stripStmtComments returns a shallow copy of the statement with comments removed.
+func stripStmtComments(stmt *syntax.Stmt) *syntax.Stmt {
+	cp := *stmt
+	cp.Comments = nil
+	return &cp
 }

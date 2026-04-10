@@ -11,12 +11,13 @@ import (
 
 func buildCmd() *cobra.Command {
 	var (
-		output      string
-		minify      bool
-		shebang     string
-		mode        string
-		projectType string
-		treeshake   bool
+		output        string
+		minify        bool
+		shebang       string
+		mode          string
+		projectType   string
+		treeshake     bool
+		stripComments bool
 	)
 
 	cmd := &cobra.Command{
@@ -79,18 +80,19 @@ If omitted, the entrypoint is read from .seirarc.json.`,
 			}
 
 			return bundler.New(bundler.Config{
-				InputPath:  input,
-				OutputPath: output,
-				BaseDir:    baseDir,
-				Minify:     minify,
-				Shebang:    sh,
-				Mode:       m,
-				Type:       t,
-				Env:        cfg.Env,
-				Include:    cfg.Include,
-				Exports:    cfg.Exports,
-				DepsDir:    cfg.DepsDir,
-				TreeShake:  ts,
+				InputPath:     input,
+				OutputPath:    output,
+				BaseDir:       baseDir,
+				Minify:        minify,
+				StripComments: stripComments,
+				Shebang:       sh,
+				Mode:          m,
+				Type:          t,
+				Env:           cfg.Env,
+				Include:       cfg.Include,
+				Exports:       cfg.Exports,
+				DepsDir:       cfg.DepsDir,
+				TreeShake:     ts,
 			}).Bundle()
 		},
 	}
@@ -101,6 +103,7 @@ If omitted, the entrypoint is read from .seirarc.json.`,
 	cmd.Flags().StringVar(&mode, "mode", "", "bundle mode: tarball or concat (default: from config or tarball)")
 	cmd.Flags().StringVar(&projectType, "type", "", "project type: executable or library (default: from config or executable)")
 	cmd.Flags().BoolVar(&treeshake, "treeshake", false, "enable tree shaking to remove unused functions")
+	cmd.Flags().BoolVar(&stripComments, "strip-comments", false, "remove comments from bundled output")
 
 	return cmd
 }

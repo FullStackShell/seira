@@ -17,18 +17,19 @@ type Mode interface {
 
 // BundleContext holds the shared state for all bundle modes.
 type BundleContext struct {
-	Graph       *depgraph.Graph
-	Order       []string // topologically sorted paths
-	BaseDir     string
-	Shebang     string
-	Minify      bool
-	Output      io.Writer
-	DepsDir     string // deps directory path (for seira_path support)
-	HasDeps     bool   // whether a deps directory exists
-	Type        string // "executable" or "library"
-	LibraryName string // library name (used in library mode header)
-	Exports     []string // library mode: exported function names
-	TreeShake   bool     // enable tree shaking (remove unused functions)
+	Graph         *depgraph.Graph
+	Order         []string // topologically sorted paths
+	BaseDir       string
+	Shebang       string
+	Minify        bool
+	StripComments bool     // remove comments from output (without minifying code)
+	Output        io.Writer
+	DepsDir       string // deps directory path (for seira_path support)
+	HasDeps       bool   // whether a deps directory exists
+	Type          string // "executable" or "library"
+	LibraryName   string // library name (used in library mode header)
+	Exports       []string // library mode: exported function names
+	TreeShake     bool     // enable tree shaking (remove unused functions)
 }
 
 // namespaceAlias represents a short-name alias for a namespaced function.

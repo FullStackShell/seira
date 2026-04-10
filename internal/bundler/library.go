@@ -106,7 +106,7 @@ func (m *LibraryMode) Generate(ctx *BundleContext) error {
 				currentOrigin = f.origin
 				fmt.Fprintf(w, "\n# from %s\n", currentOrigin)
 			}
-			if err := printStmt(printer, w, f.stmt); err != nil {
+			if err := printStmt(printer, w, f.stmt, ctx.StripComments); err != nil {
 				return errors.Wrapf(err, "printing function %s", f.name)
 			}
 		}
@@ -131,7 +131,7 @@ func (m *LibraryMode) Generate(ctx *BundleContext) error {
 				currentOrigin = e.origin
 				fmt.Fprintf(w, "\n# from %s\n", currentOrigin)
 			}
-			if err := printStmt(printer, w, e.stmt); err != nil {
+			if err := printStmt(printer, w, e.stmt, ctx.StripComments); err != nil {
 				return errors.Wrap(err, "printing side effect")
 			}
 		}

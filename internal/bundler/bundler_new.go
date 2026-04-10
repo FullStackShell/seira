@@ -25,7 +25,8 @@ type Config struct {
 	Include    []string
 	Exports    []string // library mode: exported function names
 	DepsDir    string   // deps directory (default: deps relative to BaseDir)
-	TreeShake  bool     // enable tree shaking (remove unused functions)
+	TreeShake     bool // enable tree shaking (remove unused functions)
+	StripComments bool // remove comments from output (without minifying code)
 }
 
 // Bundler orchestrates the full bundle pipeline.
@@ -136,18 +137,19 @@ func (b *Bundler) Bundle() error {
 	}
 
 	ctx := &BundleContext{
-		Graph:       graph,
-		Order:       order,
-		BaseDir:     baseDir,
-		Shebang:     shebang,
-		Minify:      b.cfg.Minify,
-		Output:      outFile,
-		DepsDir:     depsDir,
-		HasDeps:     hasDeps,
-		Type:        b.cfg.Type,
-		LibraryName: "",
-		Exports:     b.cfg.Exports,
-		TreeShake:   b.cfg.TreeShake,
+		Graph:         graph,
+		Order:         order,
+		BaseDir:       baseDir,
+		Shebang:       shebang,
+		Minify:        b.cfg.Minify,
+		StripComments: b.cfg.StripComments,
+		Output:        outFile,
+		DepsDir:       depsDir,
+		HasDeps:       hasDeps,
+		Type:          b.cfg.Type,
+		LibraryName:   "",
+		Exports:       b.cfg.Exports,
+		TreeShake:     b.cfg.TreeShake,
 	}
 
 	mode := resolveMode(b.cfg.Mode, b.cfg.Type)
