@@ -14,7 +14,7 @@ var (
 )
 
 func init() {
-	cmdReg.Add(astCmd(), buildCmd(), newCmd(), installCmd(), depsCmd(), pathCmd(), lintCmd(), docCmd())
+	cmdReg.Add(astCmd(), buildCmd(), newCmd(), installCmd(), depsCmd(), pathCmd(), lintCmd(), docCmd(), testCmd())
 }
 
 func rootCmd() *cobra.Command {

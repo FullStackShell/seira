@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 
 	"github.com/Hayao0819/seira/internal/config"
+	"github.com/Hayao0819/seira/internal/testinit"
 	"github.com/spf13/cobra"
 )
 
@@ -91,6 +92,11 @@ main() {
 				}
 
 				fmt.Printf("Created new seira project: %s\n", name)
+			}
+
+			// Initialize ShellSpec test structure
+			if err := testinit.Init(name, cfg); err != nil {
+				return fmt.Errorf("initializing test structure: %w", err)
 			}
 
 			return nil

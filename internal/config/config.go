@@ -8,6 +8,13 @@ import (
 
 var configFileNames = []string{"seirarc.json", ".seirarc.json"}
 
+// TestConfig holds settings for the seira test command (ShellSpec integration).
+type TestConfig struct {
+	Shell  string `json:"shell,omitempty"`  // shell to run tests (default: config.Shell or "bash")
+	Jobs   int    `json:"jobs,omitempty"`   // parallel jobs (0 = shellspec default)
+	Format string `json:"format,omitempty"` // output format: progress, documentation, tap, junit
+}
+
 type Config struct {
 	Name         string            `json:"name"`         // package name (required for libraries using naming lint)
 	Prefix       []string          `json:"prefix"`       // function namespace prefixes for naming convention lint
@@ -23,6 +30,7 @@ type Config struct {
 	Exports      []string          `json:"exports"`      // library mode: exported function names (empty = all)
 	DepsDir      string            `json:"deps_dir"`     // deps directory (default: "deps")
 	TreeShake    bool              `json:"treeshake"`    // enable tree shaking
+	Test         TestConfig        `json:"test,omitempty"`
 }
 
 // Default returns a Config with sensible defaults.
