@@ -71,6 +71,7 @@ func (r *ConditionalSourceRule) walkStmt(stmt *syntax.Stmt, file string, depth i
 				Severity: SeverityWarn,
 				File:     file,
 				Line:     int(stmt.Pos().Line()),
+				Column:   int(stmt.Pos().Col()),
 				Message:  "source inside conditional block is resolved at build time in concat mode",
 			})
 		}

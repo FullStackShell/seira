@@ -31,6 +31,7 @@ func (r *BashSourceRule) Check(ctx *Context) []Diagnostic {
 
 			name := pe.Param.Value
 			line := int(pe.Pos().Line())
+			col := int(pe.Pos().Col())
 
 			switch {
 			case name == "BASH_SOURCE":
@@ -39,6 +40,7 @@ func (r *BashSourceRule) Check(ctx *Context) []Diagnostic {
 					Severity: SeverityWarn,
 					File:     rel,
 					Line:     line,
+					Column:   col,
 					Message:  "$BASH_SOURCE will refer to the bundled script, not the original file",
 				})
 			case name == "0" && hasSuffixRemoval(pe):
@@ -48,6 +50,7 @@ func (r *BashSourceRule) Check(ctx *Context) []Diagnostic {
 					Severity: SeverityWarn,
 					File:     rel,
 					Line:     line,
+					Column:   col,
 					Message:  "$0 with path manipulation will refer to the bundled script, not the original file",
 				})
 			}

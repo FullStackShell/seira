@@ -7,6 +7,7 @@ import (
 
 	"github.com/Hayao0819/seira/internal/config"
 	"github.com/Hayao0819/seira/internal/lint"
+
 	"github.com/spf13/cobra"
 )
 
@@ -14,6 +15,7 @@ func lintCmd() *cobra.Command {
 	var (
 		mode        string
 		projectType string
+		format      string
 	)
 
 	cmd := &cobra.Command{
@@ -70,41 +72,40 @@ If no input file is given, uses the entrypoint from .seirarc.json.`,
 				t = projectType
 			}
 
+			f, err := lint.ParseFormat(format)
+			if err != nil {
+				return err
+			}
+
 			diags, err := lint.Lint(lint.Config{
 				InputPath: input,
 				BaseDir:   baseDir,
 				Mode:      m,
 				Type:      t,
 				Env:       cfg.Env,
+				Prefix:    cfg.Prefix,
+				Shell:     cfg.Shell,
 			})
 			if err != nil {
 				return err
 			}
 
-			if len(diags) == 0 {
+			w := os.Stdout
+			if f == lint.FormatText {
+				w = os.Stderr
+			}
+			if f == lint.FormatText && len(diags) == 0 {
 				fmt.Println("No issues found.")
 				return nil
 			}
 
-			for _, d := range diags {
-				icon := "⚠"
-				if d.Severity == lint.SeverityError {
-					icon = "✗"
-				}
-				loc := d.File
-				if d.Line > 0 {
-					loc = fmt.Sprintf("%s:%d", d.File, d.Line)
-				}
-				fmt.Fprintf(os.Stderr, "  %s %s: %s [%s]\n", icon, loc, d.Message, d.Rule)
-			}
-			fmt.Fprintf(os.Stderr, "\n%d issue(s) found.\n", len(diags))
-
-			return nil
+			return lint.WriteDiagnostics(w, diags, f)
 		},
 	}
 
 	cmd.Flags().StringVar(&mode, "mode", "", "bundle mode to check against (default: from config or concat)")
 	cmd.Flags().StringVar(&projectType, "type", "", "project type: executable or library")
+	cmd.Flags().StringVar(&format, "format", "text", "output format: text, gcc, json")
 
 	return cmd
 }

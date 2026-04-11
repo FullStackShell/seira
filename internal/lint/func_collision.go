@@ -39,6 +39,7 @@ func (r *FuncCollisionRule) Check(ctx *Context) []Diagnostic {
 			}
 			name := cs.FuncName
 			line := int(cs.Stmt.Pos().Line())
+			col := int(cs.Stmt.Pos().Col())
 
 			if prev, exists := seen[name]; exists && prev.file != rel {
 				diags = append(diags, Diagnostic{
@@ -46,6 +47,7 @@ func (r *FuncCollisionRule) Check(ctx *Context) []Diagnostic {
 					Severity: SeverityWarn,
 					File:     rel,
 					Line:     line,
+					Column:   col,
 					Message:  fmt.Sprintf("function %q already defined in %s:%d — last definition wins", name, prev.file, prev.line),
 				})
 			} else if !exists {

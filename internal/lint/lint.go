@@ -35,12 +35,15 @@ type Diagnostic struct {
 	Severity Severity // warn or error
 	File     string   // relative file path
 	Line     int      // 1-based line number (0 if unknown)
+	Column   int      // 1-based column number (0 if unknown)
 	Message  string   // human-readable description
 }
 
 func (d Diagnostic) String() string {
 	loc := d.File
-	if d.Line > 0 {
+	if d.Line > 0 && d.Column > 0 {
+		loc = fmt.Sprintf("%s:%d:%d", d.File, d.Line, d.Column)
+	} else if d.Line > 0 {
 		loc = fmt.Sprintf("%s:%d", d.File, d.Line)
 	}
 	return fmt.Sprintf("[%s] %s: %s (%s)", d.Severity, loc, d.Message, d.Rule)
@@ -52,6 +55,8 @@ type Context struct {
 	Order   []string // topologically sorted paths (absolute)
 	BaseDir string   // absolute base directory for relative paths
 	Mode    string   // "concat", "tarball", "library"
+	Prefix  []string // function namespace prefixes (from config, opt-in for naming rule)
+	Shell   string   // "bash" or "sh" (determines naming convention separator)
 }
 
 // Rule is a single lint check.
@@ -72,6 +77,7 @@ func NewRunner() *Runner {
 			&BashSourceRule{},
 			&ConditionalSourceRule{},
 			&FuncCollisionRule{},
+			&NamingConventionRule{},
 		},
 	}
 }
@@ -108,6 +114,8 @@ type Config struct {
 	Mode      string            // bundle mode to check against
 	Type      string            // "executable" or "library"
 	Env       map[string]string // environment variables for source resolution
+	Prefix    []string          // function namespace prefixes for naming convention lint
+	Shell     string            // "bash" or "sh" (determines naming convention separator)
 }
 
 // Lint runs all lint rules on the given input and returns diagnostics.
@@ -147,6 +155,8 @@ func Lint(cfg Config) ([]Diagnostic, error) {
 		Order:   order,
 		BaseDir: baseDir,
 		Mode:    mode,
+		Prefix:  cfg.Prefix,
+		Shell:   cfg.Shell,
 	}
 
 	return NewRunner().Run(ctx), nil
