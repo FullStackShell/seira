@@ -9,6 +9,9 @@ import (
 var configFileNames = []string{"seirarc.json", ".seirarc.json"}
 
 type Config struct {
+	Name         string            `json:"name"`         // package name (required for libraries using naming lint)
+	Prefix       []string          `json:"prefix"`       // function namespace prefixes for naming convention lint
+	Shell        string            `json:"shell"`        // "bash" or "sh" (determines naming convention separator)
 	Entrypoint   string            `json:"entrypoint"`
 	Shebang      string            `json:"shebang"`
 	Mode         string            `json:"mode"`      // "tarball" or "concat", default "tarball"
@@ -25,6 +28,7 @@ type Config struct {
 // Default returns a Config with sensible defaults.
 func Default() *Config {
 	return &Config{
+		Prefix:       []string{},
 		Shebang:      "/bin/sh",
 		Env:          map[string]string{},
 		Include:      []string{},
@@ -103,6 +107,9 @@ func parse(data []byte) (*Config, error) {
 	}
 	if cfg.Dependencies == nil {
 		cfg.Dependencies = map[string]string{}
+	}
+	if cfg.Prefix == nil {
+		cfg.Prefix = []string{}
 	}
 	if cfg.Exports == nil {
 		cfg.Exports = []string{}
